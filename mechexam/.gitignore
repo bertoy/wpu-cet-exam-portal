@@ -1,0 +1,40 @@
+# The data folder holds the database, uploads and backups. It must NEVER be
+# committed: it carries student records, and a redeployment would overwrite
+# live data with whatever happened to be in the repository.
+data/
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials. The portal reads the Google service account from the
+# environment, never from a file in the repository.
+key.json
+service-account*.json
+credentials*.json
+client_secret*.json
+.env
+.env.*
+!.env.example
+
+# Backups contain every student's marks and the password hashes.
+*-backup-*.json
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
