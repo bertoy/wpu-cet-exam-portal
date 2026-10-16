@@ -1,0 +1,21 @@
+# Core
+Flask==3.1.3
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+SQLAlchemy==2.0.43
+Werkzeug==3.1.3
+Jinja2==3.1.6
+
+# Production server (Railway, and any host that runs a WSGI app itself)
+gunicorn==23.0.0
+
+# PostgreSQL. Harmless on SQLite-only hosts such as PythonAnywhere free tier,
+# but if the wheel will not install there, simply delete this line -- the app
+# falls back to SQLite on its own.
+psycopg2-binary==2.9.10
+
+# Google Drive uploads for performance-task submissions. Optional: without
+# these the app still accepts and stores every submission on the server, and
+# the System check page says so plainly.
+google-api-python-client==2.184.0
+google-auth==2.41.1
