@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Activity log · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Activity log
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Activity log</h1>
+    <p class="page-sub">
+      Every grade change, score override, finalisation and sign-in is recorded
+      here with who did it and when.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body tight">
+    <form method="get" class="flex">
+      <div>
+        <select name="action" onchange="this.form.submit()">
+          <option value="">Every kind of action</option>
+          {% for option in actions %}
+            <option value="{{ option }}" {{ 'selected' if option == action }}>
+              {{ option.replace('_', ' ')|title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <span class="grow small muted">{{ listing.total }} entries</span>
+      {% if action %}<a class="button button-quiet" href="{{ url_for('admin.audit') }}">Clear</a>{% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if listing.items %}
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead>
+          <tr><th>When</th><th>Who</th><th>Action</th><th>Subject of it</th><th>Detail</th><th>From</th></tr>
+        </thead>
+        <tbody>
+          {% for entry in listing.items %}
+          <tr>
+            <td class="tiny nowrap">{{ entry.created_at|dt('%d %b %Y %H:%M:%S') }}</td>
+            <td class="small">{{ entry.user.display_name if entry.user else '—' }}</td>
+            <td class="small"><strong>{{ entry.action.replace('_', ' ')|title }}</strong></td>
+            <td class="tiny muted">{{ entry.entity }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</td>
+            <td class="tiny">{{ entry.detail|truncate(80) if entry.detail else '—' }}</td>
+            <td class="tiny mono muted">{{ entry.ip_address or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><p>Nothing recorded yet.</p></div>
+    {% endif %}
+  </div>
+
+  {% if listing.pages > 1 %}
+  <div class="card-foot flex">
+    <span class="grow small muted">Page {{ listing.page }} of {{ listing.pages }}</span>
+    <div class="button-row">
+      {% if listing.has_prev %}
+        <a class="button button-small" href="{{ url_for('admin.audit', page=listing.prev_num, action=action) }}">Previous</a>
+      {% endif %}
+      {% if listing.has_next %}
+        <a class="button button-small" href="{{ url_for('admin.audit', page=listing.next_num, action=action) }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Term students · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Term students</h1>
+    <p class="page-sub">
+      The general roll for {{ year }} — every student and their standing for the
+      year. A student marked shifted, transferred out or stopped is left out of
+      every class list for that year, while their records stay intact.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body tight">
+    <form method="get" class="flex">
+      <div>
+        <label for="year" class="visually-hidden">School year</label>
+        <select id="year" name="school_year" onchange="this.form.submit()">
+          {% for option in years %}
+            <option value="{{ option }}" {{ 'selected' if option == year }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="status" class="visually-hidden">Standing</label>
+        <select id="status" name="status" onchange="this.form.submit()">
+          <option value="">Every standing</option>
+          {% for option in status_choices %}
+            <option value="{{ option }}" {{ 'selected' if option == status_filter }}>
+              {{ status_labels[option] }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="grow" style="max-width:20rem">
+        <label for="q" class="visually-hidden">Search</label>
+        <input type="search" id="q" name="q" value="{{ search }}"
+               placeholder="Search by name or student number">
+      </div>
+      <button type="submit" class="button">Search</button>
+      {% if search or status_filter %}
+        <a class="button button-quiet" href="{{ url_for('courses.term_students', school_year=year) }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">{{ rows|length }} student{{ '' if rows|length == 1 else 's' }}</h2>
+  </div>
+  <div class="card-body flush">
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Student number</th><th>Name</th><th>Programme</th><th>Year</th>
+            <th class="num">Subjects</th><th>Standing for {{ year }}</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr class="{{ 'row-muted' if row.status != 'active' }}">
+            <td class="mono small">{{ row.student.student_number or '—' }}</td>
+            <td><strong>{{ row.student.name }}</strong></td>
+            <td class="small">{{ row.student.program or '—' }}</td>
+            <td class="small">{{ row.student.year_level or '—' }}</td>
+            <td class="num">{{ row.subjects }}</td>
+            <td>
+              <span class="pill {{ 'pill-pass' if row.status == 'active' else 'pill-removal' }}">
+                {{ status_labels[row.status] }}
+              </span>
+              {% if row.note %}<div class="tiny muted">{{ row.note }}</div>{% endif %}
+            </td>
+            <td class="right">
+              <form method="post"
+                    action="{{ url_for('admin.year_status', user_id=row.student.id) }}"
+                    class="flex" style="gap:0.3rem;justify-content:flex-end">
+                <input type="hidden" name="school_year" value="{{ year }}">
+                <select name="status" style="min-width:11rem">
+                  {% for option in status_choices %}
+                    <option value="{{ option }}" {{ 'selected' if option == row.status }}>
+                      {{ status_labels[option] }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="button button-small">Set</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9823;</span>
+      <p>No student matches that search.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

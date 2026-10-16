@@ -1,0 +1,160 @@
+{# Sidebar navigation. Administration sits in its own section, visible only to
+   a superadmin. Instructors see their assigned subjects and nothing else. #}
+{% set here = request.endpoint or '' %}
+
+<nav class="sidebar" aria-label="Main navigation">
+
+  <div class="sidebar-section">
+    <a class="sidebar-link {{ 'active' if here == 'dashboard.index' }}"
+       href="{{ url_for('dashboard.index') }}">
+      <span class="glyph" aria-hidden="true">&#9750;</span> Dashboard
+    </a>
+  </div>
+
+  {% if current_user.is_student %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-heading">My studies</p>
+      <a class="sidebar-link {{ 'active' if here == 'taking.available' }}"
+         href="{{ url_for('taking.available') }}">
+        <span class="glyph" aria-hidden="true">&#9998;</span> Take an exam
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'student.progress' }}"
+         href="{{ url_for('student.progress') }}">
+        <span class="glyph" aria-hidden="true">&#9783;</span> My progress
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'student.history' }}"
+         href="{{ url_for('student.history') }}">
+        <span class="glyph" aria-hidden="true">&#8986;</span> Exam history
+      </a>
+    </div>
+
+    {% if nav_courses %}
+    <div class="sidebar-section">
+      <p class="sidebar-heading">My subjects</p>
+      {% for course in nav_courses %}
+        <a class="sidebar-subject" href="{{ url_for('student.progress', subject=course.id) }}"
+           title="{{ course.title }}">{{ course.code }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Account</p>
+      <a class="sidebar-link {{ 'active' if here == 'messages.index' }}"
+         href="{{ url_for('messages.index') }}">
+        <span class="glyph" aria-hidden="true">&#9993;</span> Messages
+        {% if unread_messages %}<span class="tail">{{ unread_messages }}</span>{% endif %}
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'student.account' }}"
+         href="{{ url_for('student.account') }}">
+        <span class="glyph" aria-hidden="true">&#9881;</span> My details
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'auth.change_password' }}"
+         href="{{ url_for('auth.change_password') }}">
+        <span class="glyph" aria-hidden="true">&#128273;</span> Change password
+      </a>
+    </div>
+
+  {% else %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Teaching</p>
+      <a class="sidebar-link {{ 'active' if here.startswith('courses.') }}"
+         href="{{ url_for('courses.index') }}">
+        <span class="glyph" aria-hidden="true">&#9776;</span> My subjects
+        <span class="tail">{{ nav_courses|length }}</span>
+      </a>
+      <a class="sidebar-link {{ 'active' if here.startswith('exams.') }}"
+         href="{{ url_for('exams.index') }}">
+        <span class="glyph" aria-hidden="true">&#9998;</span> Examinations
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'exams.banks' or here == 'exams.bank_detail' }}"
+         href="{{ url_for('exams.banks') }}">
+        <span class="glyph" aria-hidden="true">&#9783;</span> Question banks
+      </a>
+      <a class="sidebar-link {{ 'active' if here.startswith('gradebook.') }}"
+         href="{{ url_for('gradebook.index') }}">
+        <span class="glyph" aria-hidden="true">&#9636;</span> Gradebook
+      </a>
+      <a class="sidebar-link {{ 'active' if here.startswith('rubrics.') }}"
+         href="{{ url_for('rubrics.index') }}">
+        <span class="glyph" aria-hidden="true">&#9745;</span> Rubrics
+      </a>
+    </div>
+
+    {% if nav_courses %}
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Subjects this term</p>
+      {% for course in nav_courses %}
+        <a class="sidebar-subject {{ 'active' if request.view_args and request.view_args.get('course_id') == course.id }}"
+           href="{{ url_for('courses.detail', course_id=course.id) }}"
+           title="{{ course.title }}">{{ course.code }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Students</p>
+      <a class="sidebar-link {{ 'active' if here == 'courses.term_students' }}"
+         href="{{ url_for('courses.term_students') }}">
+        <span class="glyph" aria-hidden="true">&#9823;</span> Term students
+      </a>
+      <a class="sidebar-link {{ 'active' if here.startswith('messages.') }}"
+         href="{{ url_for('messages.index') }}">
+        <span class="glyph" aria-hidden="true">&#9993;</span> Messages
+        {% if unread_messages %}<span class="tail">{{ unread_messages }}</span>{% endif %}
+      </a>
+    </div>
+
+    {% if current_user.is_superadmin %}
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Administration</p>
+      <a class="sidebar-link {{ 'active' if here == 'admin.index' }}"
+         href="{{ url_for('admin.index') }}">
+        <span class="glyph" aria-hidden="true">&#9881;</span> Overview
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.term' }}"
+         href="{{ url_for('admin.term') }}">
+        <span class="glyph" aria-hidden="true">&#128197;</span> Year &amp; semester
+      </a>
+      <a class="sidebar-link {{ 'active' if here in ('admin.users', 'admin.user_new', 'admin.user_edit') }}"
+         href="{{ url_for('admin.users') }}">
+        <span class="glyph" aria-hidden="true">&#9823;</span> Accounts
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.subjects' }}"
+         href="{{ url_for('admin.subjects') }}">
+        <span class="glyph" aria-hidden="true">&#9776;</span> All subjects
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.system' }}"
+         href="{{ url_for('admin.system') }}">
+        <span class="glyph" aria-hidden="true">&#9874;</span> System check
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.audit' }}"
+         href="{{ url_for('admin.audit') }}">
+        <span class="glyph" aria-hidden="true">&#9783;</span> Activity log
+      </a>
+    </div>
+    {% endif %}
+
+    <div class="sidebar-section">
+      <p class="sidebar-heading">Account</p>
+      <a class="sidebar-link {{ 'active' if here == 'auth.change_password' }}"
+         href="{{ url_for('auth.change_password') }}">
+        <span class="glyph" aria-hidden="true">&#128273;</span> Change password
+      </a>
+    </div>
+
+  {% endif %}
+
+  <div class="sidebar-footer">
+    <p class="mb1"><strong>{{ current_user.display_name }}</strong><br>
+      <span class="tiny">{{ current_user.role|title }}{% if current_user.student_number %}
+        &middot; {{ current_user.student_number }}{% endif %}</span></p>
+    <p class="mb1 tiny">{{ semester }}, {{ school_year }}</p>
+    <button type="button" class="button button-small" data-install style="display:none">
+      Install the app
+    </button>
+    <p class="tiny mt1 mb0">Portal v{{ app_version }}</p>
+  </div>
+</nav>

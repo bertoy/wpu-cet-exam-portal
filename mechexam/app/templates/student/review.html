@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Review — {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ exam.title }}</h1>
+    <p class="page-sub">
+      {{ exam.course.code }} — {{ exam.course.title }}
+      {%- if attempt.submitted_at %} &middot; submitted {{ attempt.submitted_at|dt }}{% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('taking.available') }}">Back</a>
+  </div>
+</div>
+
+{% if attempt.auto_submitted %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      {% if attempt.submit_reason == 'time_expired' %}
+        This exam was submitted automatically because the time ran out.
+      {% elif attempt.submit_reason == 'closed_by_instructor' %}
+        Your instructor closed the exam, so your answers were submitted as
+        they stood.
+      {% elif attempt.submit_reason and attempt.submit_reason.startswith('exit') %}
+        This exam was submitted automatically because the exam window was left.
+        If that was not deliberate, speak to your instructor — they can give
+        you your time back with your answers intact.
+      {% else %}
+        This exam was submitted automatically.
+      {% endif %}
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if show_score %}
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Score</div>
+    <div class="value">{{ attempt.effective_score|num }}</div>
+    <div class="note">of {{ attempt.total_points|num }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Per cent</div>
+    <div class="value">{{ attempt.percent|pct }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Questions</div>
+    <div class="value">{{ questions|length }}</div>
+  </div>
+  {% if attempt.manual_pending %}
+  <div class="stat">
+    <div class="label">Still to be marked</div>
+    <div class="value">{{ attempt.manual_pending }}</div>
+    <div class="note">written answers</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if attempt.manual_pending %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      Your written answers have yet to be read, so the score above is not
+      final. It will rise once your instructor has marked them.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% else %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      Your answers have been recorded. Your instructor will release the result
+      when the whole class has sat the exam.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if show_answers %}
+<div class="card">
+  <div class="card-body">
+    <h2 class="mb1">Your answers</h2>
+    <p class="small muted mb0">
+      The correct answers are shown because your instructor has released them.
+    </p>
+  </div>
+</div>
+
+{% for question in questions %}
+{% set rows = answers.get(question.id, []) %}
+<div class="question">
+  <div class="question-head">
+    <span class="question-number">{{ loop.index }}</span>
+    <span class="pill">{{ question.type_label }}</span>
+    {% set earned = rows|sum(attribute='points_awarded') if rows else 0 %}
+    <span class="question-points">
+      {{ earned|num }} / {{ question.effective_points|num }}
+    </span>
+  </div>
+  <div class="question-body">
+    <div class="question-text" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+    {% if question.figure_path %}
+    <figure class="question-figure">
+      <img src="{{ url_for('exams.figure', name=question.figure_path) }}"
+           alt="{{ question.figure_caption or 'Figure' }}">
+      {% if question.figure_caption %}<figcaption>{{ question.figure_caption }}</figcaption>{% endif %}
+    </figure>
+    {% endif %}
+
+    {% if not rows %}
+      <p class="small muted mb0"><em>You did not answer this one.</em></p>
+
+    {% elif question.qtype == 'multipart' %}
+      {% for part in question.parts %}
+        {% set row = rows|selectattr('sub_question_id', 'equalto', part.id)|first %}
+        <div class="subpart">
+          <span class="subpart-label">{{ part.label }})</span>
+          <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
+          <div class="small mt1">
+            You answered <strong class="mono">{{ row.response or '—' if row else '—' }}</strong>
+            &middot; correct answer <span class="mono">{{ part.answer }}</span>
+            {%- if part.unit %} {{ part.unit }}{% endif %}
+            {% if row %}
+              {% if row.is_correct %}<span class="pill pill-pass">correct</span>
+              {% else %}<span class="pill pill-fail">not correct</span>{% endif %}
+              <span class="subpart-points">{{ row.points_awarded|num }} / {{ part.points|num }}</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+
+    {% elif question.qtype == 'matching' %}
+      {% set row = rows|first %}
+      <table class="data table-compact">
+        <thead><tr><th>Item</th><th>You chose</th><th>Correct match</th><th class="mid"></th></tr></thead>
+        <tbody>
+          {% for line in matching_detail(row.response, question) %}
+          <tr>
+            <td>{{ line.left }}</td>
+            <td class="small">{{ line.chose or '—' }}</td>
+            <td class="small">{{ line.correct }}</td>
+            <td class="mid">
+              {% if line.is_correct %}<span class="pill pill-pass">&#10003;</span>
+              {% else %}<span class="pill pill-fail">&#10007;</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+    {% elif question.qtype == 'essay' %}
+      {% set row = rows|first %}
+      <div class="card" style="margin:0 0 0.7rem">
+        <div class="card-body tight">
+          <p class="mb0" style="white-space:pre-wrap">{{ row.response or '(left blank)' }}</p>
+        </div>
+      </div>
+      {% if row.needs_manual %}
+        <span class="pill pill-removal">waiting to be marked</span>
+      {% else %}
+        <p class="small mb0">
+          <strong>{{ row.points_awarded|num }} of {{ row.max_points|num }}</strong>
+          {% if row.feedback %}
+            <br><span class="muted">Your instructor's comment:</span> {{ row.feedback }}
+          {% endif %}
+        </p>
+      {% endif %}
+
+    {% else %}
+      {% set row = rows|first %}
+      {% if question.qtype in ('mcq', 'truefalse') %}
+        {% for option in question.options %}
+        <div class="option {{ 'correct' if option == question.answer }}{{ ' wrong' if option == row.response and option != question.answer }}">
+          <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+          <span data-math data-math-source="{{ option }}">{{ option }}</span>
+          {% if option == row.response %}<span class="pill pill-info tiny">you chose this</span>{% endif %}
+          {% if option == question.answer %}<span class="pill pill-pass tiny">correct</span>{% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="small mb0">
+          You answered <strong class="mono">{{ row.response or '—' }}</strong>
+          {%- if question.unit %} {{ question.unit }}{% endif %}
+          &middot; correct answer <span class="mono">{{ question.answer }}</span>
+          {% if row.is_correct %}<span class="pill pill-pass">correct</span>
+          {% else %}<span class="pill pill-fail">not correct</span>{% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+
+    {% if question.explanation %}
+    <div class="callout callout-info mt1">
+      <span class="glyph" aria-hidden="true">&#8505;</span>
+      <div class="grow">
+        <p class="mb0" data-math data-math-source="{{ question.explanation }}">{{ question.explanation }}</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

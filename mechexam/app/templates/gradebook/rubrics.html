@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Rubrics · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Rubrics</h1>
+    <p class="page-sub">
+      A rubric breaks a performance task or an essay into criteria, each worth
+      a fixed number of points. Marking against one shows the student exactly
+      how the score was arrived at.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Ready-made templates</h2></div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Template</th><th>For</th><th class="num">Criteria</th>
+            <th class="num">Total</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for rubric in templates %}
+          <tr>
+            <td><strong>{{ rubric.name }}</strong>
+              {% if rubric.description %}<div class="tiny muted">{{ rubric.description }}</div>{% endif %}
+            </td>
+            <td class="small">{{ dict(rubric.KINDS).get(rubric.kind, rubric.kind) }}</td>
+            <td class="num">{{ rubric.criteria|length }}</td>
+            <td class="num">{{ rubric.total_points|num }}</td>
+            <td class="right">
+              {% if courses %}
+              <form method="post" action="{{ url_for('rubrics.copy', rubric_id=rubric.id) }}"
+                    class="flex" style="gap:0.3rem;justify-content:flex-end">
+                <select name="course_id" style="min-width:9rem">
+                  {% for course in courses %}
+                    <option value="{{ course.id }}">{{ course.code }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="button button-small">Copy into</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb0">
+      Each template is set to 10 points per criterion. Copy one into a subject
+      to change its wording or weights — templates themselves stay as they are
+      so they are the same for everyone.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">My rubrics</h2></div>
+  <div class="card-body {{ 'flush' if mine }}">
+    {% if mine %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Name</th><th>For</th><th class="num">Criteria</th>
+            <th class="num">Total</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for rubric in mine %}
+          <tr>
+            <td><a href="{{ url_for('rubrics.edit', rubric_id=rubric.id) }}">
+              <strong>{{ rubric.name }}</strong></a></td>
+            <td class="small">{{ dict(rubric.KINDS).get(rubric.kind, rubric.kind) }}</td>
+            <td class="num">{{ rubric.criteria|length }}</td>
+            <td class="num">{{ rubric.total_points|num }}</td>
+            <td class="right">
+              <a class="button button-small" href="{{ url_for('rubrics.edit', rubric_id=rubric.id) }}">Edit</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9745;</span>
+      <p>No rubrics of your own yet. Copy a template above, or create one below.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if courses %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Create a rubric</h2></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('rubrics.create') }}">
+      <div class="field-row">
+        <div class="field">
+          <label for="course_id">For which subject</label>
+          <select id="course_id" name="course_id" required>
+            {% for course in courses %}
+              <option value="{{ course.id }}">{{ course.code }} — {{ course.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="kind">What it is for</label>
+          <select id="kind" name="kind">
+            {% for value, label in kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" style="flex:0 0 12rem">
+          <label for="points_per_criterion">Points per criterion</label>
+          <input type="number" id="points_per_criterion" name="points_per_criterion"
+                 step="0.5" min="0.5" value="10">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" required
+               placeholder="Video presentation — Rankine cycle">
+      </div>
+
+      <div class="field">
+        <label for="description">What it is for</label>
+        <textarea id="description" name="description" rows="2"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="criteria">Criteria — one per line</label>
+        <textarea id="criteria" name="criteria" rows="6"
+placeholder="Technical content and accuracy
+Organisation and flow
+Delivery and articulation
+Visual aids and production quality
+Time management"></textarea>
+        <p class="field-hint">
+          Each line becomes a criterion worth the points set above. You can
+          adjust the wording and weights afterwards.
+        </p>
+      </div>
+
+      <button type="submit" class="button button-primary">Create the rubric</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

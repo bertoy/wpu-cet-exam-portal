@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set hide_sidebar = true %}
+{% block title %}Set a new password · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Set a new password</h1>
+    <p class="page-sub">
+      Ask your instructor or the administrator for a reset code, then use it here.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      <div class="field">
+        <label for="identifier">Username or student number</label>
+        <input type="text" id="identifier" name="identifier" value="{{ identifier }}"
+               autocapitalize="none" spellcheck="false" required autofocus>
+      </div>
+
+      <div class="field">
+        <label for="code">Reset code</label>
+        <input type="text" id="code" name="code" class="mono"
+               autocapitalize="characters" spellcheck="false" required>
+        <p class="field-hint">Six characters, for example 4F9A2C.</p>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="new_password">New password</label>
+          <input type="password" id="new_password" name="new_password"
+                 minlength="6" autocomplete="new-password" required>
+        </div>
+        <div class="field">
+          <label for="confirm_password">New password again</label>
+          <input type="password" id="confirm_password" name="confirm_password"
+                 minlength="6" autocomplete="new-password" required>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button type="submit" class="button button-primary">Set password</button>
+        <a class="button" href="{{ url_for('auth.login') }}">Back to sign in</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

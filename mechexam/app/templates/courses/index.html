@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}My subjects · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>My subjects</h1>
+    <p class="page-sub">{{ semester }}, {{ school_year }}</p>
+  </div>
+  {% if current_user.is_superadmin %}
+  <div class="button-row">
+    <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Add a subject</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if rows %}
+<div class="grid grid-2">
+  {% for row in rows %}
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 style="margin-bottom:0.1rem">
+          <a href="{{ url_for('courses.detail', course_id=row.course.id) }}">{{ row.course.code }}</a>
+        </h2>
+        <p class="page-sub mb0">{{ row.course.title }}</p>
+      </div>
+      {% if row.course.is_finalised %}<span class="pill pill-info">finalised</span>{% endif %}
+      {% if row.course.has_laboratory %}<span class="pill pill-gold">with laboratory</span>{% endif %}
+    </div>
+    <div class="card-body">
+      <div class="grid grid-3 mb1">
+        <div><div class="label tiny muted">Students</div><div class="strong">{{ row.students }}</div></div>
+        <div><div class="label tiny muted">Sections</div><div class="strong">{{ row.sections or '—' }}</div></div>
+        <div><div class="label tiny muted">Exams</div><div class="strong">{{ row.exams }}</div></div>
+      </div>
+      <div class="button-row">
+        <a class="button button-small" href="{{ url_for('courses.detail', course_id=row.course.id) }}">Subject page</a>
+        <a class="button button-small" href="{{ url_for('gradebook.course', course_id=row.course.id) }}">Gradebook</a>
+        <a class="button button-small" href="{{ url_for('courses.class_list', course_id=row.course.id) }}">Class list</a>
+        <a class="button button-small" href="{{ url_for('reports.gradesheet', course_id=row.course.id) }}">Grade sheet</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9776;</span>
+      <h2>No subjects assigned</h2>
+      <p>
+        You have no subjects for {{ semester }}, {{ school_year }}.
+        {% if current_user.is_superadmin %}
+          Add one from the administration pages.
+        {% else %}
+          The administrator assigns subjects to instructors; ask them to add yours.
+        {% endif %}
+      </p>
+      {% if current_user.is_superadmin %}
+        <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Add a subject</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

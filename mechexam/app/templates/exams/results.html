@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Results · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Results
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Results — {{ exam.title }}</h1>
+    <p class="page-sub">
+      {{ exam.course.code }}
+      {%- if exam.section %} &middot; section {{ exam.section.name }}{% endif %}
+      &middot; out of {{ exam.total_points|num }} points
+      {%- if exam.opened_at %} &middot; held {{ exam.opened_at|dt }}{% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('exams.analysis', exam_id=exam.id) }}">Item analysis</a>
+    <a class="button" href="{{ url_for('exams.export_csv', exam_id=exam.id) }}">Export CSV</a>
+    <form class="inline-form" method="post" action="{{ url_for('exams.rescore', exam_id=exam.id) }}"
+          data-confirm="Mark every attempt again against the current answer key? Overridden scores are kept.">
+      <button type="submit" class="button">Re-mark all</button>
+    </form>
+    {% if exam.link_item_id %}
+      <form class="inline-form" method="post" action="{{ url_for('exams.sync', exam_id=exam.id) }}">
+        <button type="submit" class="button">Push to the gradebook</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if stats %}
+<div class="grid grid-4 mb2">
+  <div class="stat"><div class="label">Sat it</div><div class="value">{{ stats.count }}</div></div>
+  <div class="stat"><div class="label">Mean</div><div class="value">{{ stats.mean|pct }}%</div></div>
+  <div class="stat"><div class="label">Median</div><div class="value">{{ stats.median|pct }}%</div></div>
+  <div class="stat">
+    <div class="label">Highest / lowest</div>
+    <div class="value" style="font-size:1.3rem">{{ stats.high|pct }} / {{ stats.low|pct }}</div>
+    <div class="note">per cent</div>
+  </div>
+  <div class="stat">
+    <div class="label">At 60% or above</div>
+    <div class="value">{{ stats.passed }}</div>
+    <div class="note">of {{ stats.count }}</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Attempts</h2>
+    <div style="max-width:16rem">
+      <input type="search" data-filter-target="#attempts tbody tr" placeholder="Find a student">
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if attempts %}
+    <div class="table-wrap">
+      <table class="data" id="attempts">
+        <thead>
+          <tr>
+            <th>Student</th><th class="num">Score</th><th class="num">%</th>
+            <th class="mid">State</th><th class="mid">To mark</th>
+            <th class="mid">Flags</th><th>Submitted</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for attempt in attempts %}
+          <tr data-search="{{ attempt.student.name }} {{ attempt.student.student_number or '' }}">
+            <td>
+              <a href="{{ url_for('exams.attempt_detail', attempt_id=attempt.id) }}">
+                <strong>{{ attempt.student.name }}</strong></a>
+              <div class="tiny muted mono">{{ attempt.student.student_number or '' }}</div>
+            </td>
+            <td class="num">
+              {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+              {% if attempt.is_override %}
+                <div class="tiny" style="color:var(--amber-600)" title="{{ attempt.override_note }}">overridden</div>
+              {% endif %}
+            </td>
+            <td class="num">
+              <span class="{{ 'grade-pass' if attempt.percent >= 60 else 'grade-fail' }}">
+                {{ attempt.percent|pct }}
+              </span>
+            </td>
+            <td class="mid">
+              {% if attempt.is_submitted %}
+                <span class="pill pill-pass">submitted</span>
+                {% if attempt.auto_submitted %}
+                  <div class="tiny muted" title="{{ attempt.submit_reason }}">automatic</div>
+                {% endif %}
+              {% else %}
+                <span class="pill pill-open">in progress</span>
+              {% endif %}
+            </td>
+            <td class="mid">
+              {% if attempt.manual_pending %}
+                <span class="pill pill-removal">{{ attempt.manual_pending }}</span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td class="mid">
+              {% if attempt.events %}
+                <span class="pill pill-removal" title="Times the exam window was left">{{ attempt.events|length }}</span>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td class="small nowrap">{{ attempt.submitted_at|dt('%d %b, %I:%M %p') }}</td>
+            <td class="right">
+              <a class="button button-small"
+                 href="{{ url_for('exams.attempt_detail', attempt_id=attempt.id) }}">Open</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9998;</span>
+      <p>Nobody has sat this exam yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if missing %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Did not sit it</h2>
+    <span class="pill pill-removal">{{ missing|length }}</span>
+  </div>
+  <div class="card-body flush">
+    <table class="data table-compact">
+      <thead><tr><th>Student number</th><th>Name</th><th></th></tr></thead>
+      <tbody>
+        {% for student in missing %}
+        <tr>
+          <td class="mono small">{{ student.student_number or '—' }}</td>
+          <td>{{ student.name }}</td>
+          <td class="right">
+            <a class="button button-small"
+               href="{{ url_for('messages.compose', student=student.id, course=exam.course_id, kind='private') }}">
+              Message
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb0">
+      To let one of these students sit it late, open the exam again — only they
+      will have no attempt recorded — or create a copy for a make-up sitting.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

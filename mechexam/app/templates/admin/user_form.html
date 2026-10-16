@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}{{ user.name if user else 'New account' }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>
+  <a href="{{ url_for('admin.users') }}">Accounts</a><span>/</span>
+  {{ user.name if user else 'New' }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ user.name if user else 'Add an account' }}</h1>
+    {% if user %}
+    <p class="page-sub">
+      {{ user.role|title }} &middot; created {{ user.created_at|d }}
+      {%- if user.last_login_at %} &middot; last signed in {{ user.last_login_at|dt }}{% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Details</h2></div>
+    <div class="card-body">
+      <form method="post" data-warn-unsaved>
+        <div class="field">
+          <label for="name">Full name</label>
+          <input type="text" id="name" name="name" value="{{ user.name if user else '' }}" required>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" spellcheck="false"
+                   autocapitalize="none" value="{{ user.username if user else '' }}" required>
+          </div>
+          <div class="field">
+            <label for="role">Role</label>
+            <select id="role" name="role" required>
+              {% for option in roles %}
+                <option value="{{ option }}" {{ 'selected' if user and user.role == option }}>
+                  {{ option|title }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="student_number">Student number</label>
+            <input type="text" id="student_number" name="student_number"
+                   value="{{ user.student_number or '' if user else '' }}">
+            <p class="field-hint">Students sign in with this as well as their username.</p>
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" value="{{ user.email or '' if user else '' }}">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="program">Programme</label>
+            <input type="text" id="program" name="program" placeholder="BSME"
+                   value="{{ user.program or '' if user else '' }}">
+          </div>
+          <div class="field">
+            <label for="year_level">Year level</label>
+            <input type="text" id="year_level" name="year_level" placeholder="4th Year"
+                   value="{{ user.year_level or '' if user else '' }}">
+          </div>
+          <div class="field">
+            <label for="contact">Contact number</label>
+            <input type="tel" id="contact" name="contact"
+                   value="{{ user.contact or '' if user else '' }}">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="rank">Academic rank <span class="muted">(instructors)</span></label>
+          <input type="text" id="rank" name="rank" placeholder="Instructor I"
+                 value="{{ user.rank or '' if user else '' }}">
+        </div>
+
+        <fieldset>
+          <legend>Password</legend>
+          <div class="field">
+            <label for="password">{{ 'New password' if user else 'Password' }}</label>
+            <input type="password" id="password" name="password" minlength="6"
+                   autocomplete="new-password">
+            <p class="field-hint">
+              {% if user %}Leave this blank to keep the current password.
+              {% else %}Leave blank to use the student number (or the username) as the
+                first password — they will be asked to change it.{% endif %}
+            </p>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="must_change_password" value="1"
+                   {{ 'checked' if user and user.must_change_password }}>
+            <span>Require a new password at the next sign-in</span>
+          </label>
+        </fieldset>
+
+        <label class="check">
+          <input type="checkbox" name="is_enabled" value="1"
+                 {{ 'checked' if not user or user.is_enabled }}>
+          <span>Account is active
+            <span class="check-note">A disabled account cannot sign in, but its
+              records are kept.</span></span>
+        </label>
+
+        <div class="button-row">
+          <button type="submit" class="button button-primary">
+            {{ 'Save changes' if user else 'Create account' }}
+          </button>
+          <a class="button" href="{{ url_for('admin.users') }}">Back to accounts</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    {% if user %}
+    <div class="card">
+      <div class="card-head"><h3 class="grow">Password reset code</h3></div>
+      <div class="card-body">
+        <p class="small">
+          No email server is needed. Issue a code, give it to the person, and
+          they set their own password from the sign-in page.
+        </p>
+        {% if user.reset_code %}
+        <div class="callout callout-info">
+          <span class="glyph" aria-hidden="true">&#128273;</span>
+          <div class="grow">
+            <p class="mb0">Outstanding code: <strong class="mono">{{ user.reset_code }}</strong></p>
+          </div>
+        </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin.user_reset_code', user_id=user.id) }}">
+          <button type="submit" class="button">Issue a reset code</button>
+        </form>
+      </div>
+    </div>
+
+    {% if user.is_student %}
+    <div class="card">
+      <div class="card-head"><h3 class="grow">Standing for the school year</h3></div>
+      <div class="card-body">
+        <p class="small">
+          Marking a student shifted, transferred out or stopped removes them
+          from every class list for that year. Their recorded marks are kept.
+        </p>
+        <form method="post" action="{{ url_for('admin.year_status', user_id=user.id) }}">
+          <div class="field-row">
+            <div class="field">
+              <label for="status_year">School year</label>
+              <input type="text" id="status_year" name="school_year" value="{{ school_year }}">
+            </div>
+            <div class="field">
+              <label for="status">Standing</label>
+              <select id="status" name="status">
+                {% for option in year_status_choices %}
+                  <option value="{{ option }}">{{ status_labels[option] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="status_note">Note</label>
+            <input type="text" id="status_note" name="note" placeholder="Optional">
+          </div>
+          <button type="submit" class="button">Save standing</button>
+        </form>
+
+        {% if statuses %}
+        <h4 class="mt2">Recorded</h4>
+        <table class="data table-compact">
+          <thead><tr><th>Year</th><th>Standing</th><th>Note</th></tr></thead>
+          <tbody>
+            {% for row in statuses %}
+            <tr>
+              <td>{{ row.school_year }}</td>
+              <td><span class="pill {{ 'pill-pass' if row.status == 'active' else 'pill-removal' }}">{{ row.label }}</span></td>
+              <td class="small">{{ row.note or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if enrolments %}
+    <div class="card">
+      <div class="card-head"><h3 class="grow">Enrolled subjects</h3></div>
+      <div class="card-body flush">
+        <table class="data table-compact">
+          <thead><tr><th>Subject</th><th>Term</th><th>Section</th><th class="mid">State</th></tr></thead>
+          <tbody>
+            {% for row in enrolments %}
+            <tr>
+              <td class="small">{{ row.course.code if row.course else '—' }}</td>
+              <td class="tiny">{{ row.course.term_label if row.course else '' }}</td>
+              <td class="small">{{ row.section.name if row.section else '—' }}</td>
+              <td class="mid">
+                {% if row.is_dropped %}<span class="pill pill-fail">dropped</span>
+                {% else %}<span class="pill pill-pass">enrolled</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div class="card">
+      <div class="card-head"><h3 class="grow">Delete</h3></div>
+      <div class="card-body">
+        <p class="small muted">
+          Deleting removes the account and its enrolments for good. Disabling
+          is almost always the better choice — it keeps the records intact.
+        </p>
+        <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}"
+              data-confirm="Permanently delete {{ user.name }}? This cannot be undone.">
+          <button type="submit" class="button button-danger">Delete this account</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}{{ rubric.name }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('rubrics.index') }}">Rubrics</a><span>/</span>{{ rubric.name }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ rubric.name }}</h1>
+    <p class="page-sub">
+      {{ dict(rubric.KINDS).get(rubric.kind, rubric.kind) }}
+      &middot; {{ rubric.criteria|length }} criteria
+      &middot; {{ rubric.total_points|num }} points in total
+      {%- if rubric.is_template %} &middot; shared template{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if rubric.is_template %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      This is a shared template used across the college. Copy it into a subject
+      before changing it, so other instructors keep the original.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" data-warn-unsaved>
+  <div class="card">
+    <div class="card-head"><h2 class="grow">The rubric</h2></div>
+    <div class="card-body">
+      <div class="field-row">
+        <div class="field" style="flex:2 1 20rem">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" value="{{ rubric.name }}">
+        </div>
+        <div class="field">
+          <label for="kind">What it is for</label>
+          <select id="kind" name="kind">
+            {% for value, label in kinds %}
+              <option value="{{ value }}" {{ 'selected' if rubric.kind == value }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="2">{{ rubric.description or '' }}</textarea>
+      </div>
+
+      <div class="field-row" style="align-items:flex-end">
+        <div class="field" style="flex:0 0 13rem">
+          <label for="points_per_criterion">Points per criterion</label>
+          <input type="number" id="points_per_criterion" name="points_per_criterion"
+                 step="0.5" min="0.5" value="{{ rubric.points_per_criterion|num }}">
+        </div>
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" name="apply_to_all" value="1">
+            <span>Apply that to every criterion
+              <span class="check-note">Otherwise each criterion keeps the points set below.</span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">Criteria</h2>
+      <span class="pill pill-info">{{ rubric.total_points|num }} points</span>
+    </div>
+    <div class="card-body">
+      {% for criterion in rubric.criteria %}
+      <div class="rubric-criterion">
+        <div class="field-row">
+          <div class="field" style="flex:0 0 5rem">
+            <label for="order_{{ criterion.id }}">Order</label>
+            <input type="number" id="order_{{ criterion.id }}" name="order_{{ criterion.id }}"
+                   min="1" value="{{ criterion.order_index or loop.index }}">
+          </div>
+          <div class="field" style="flex:3 1 18rem">
+            <label for="title_{{ criterion.id }}">Criterion</label>
+            <input type="text" id="title_{{ criterion.id }}" name="title_{{ criterion.id }}"
+                   value="{{ criterion.title }}">
+          </div>
+          <div class="field" style="flex:0 0 8rem">
+            <label for="points_{{ criterion.id }}">Points</label>
+            <input type="number" id="points_{{ criterion.id }}" name="points_{{ criterion.id }}"
+                   step="0.5" min="0.5" value="{{ criterion.max_points|num }}">
+          </div>
+        </div>
+        <div class="field">
+          <label for="description_{{ criterion.id }}">What a good answer looks like</label>
+          <input type="text" id="description_{{ criterion.id }}" name="description_{{ criterion.id }}"
+                 value="{{ criterion.description or '' }}"
+                 placeholder="Principles are correct, computations sound, units consistent.">
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if not rubric.criteria %}
+        <div class="empty"><p>No criteria yet. Add the first one below.</p></div>
+      {% endif %}
+
+      <div class="button-row">
+        <button type="submit" class="button button-primary">Save the rubric</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h3 class="grow">Add a criterion</h3></div>
+    <div class="card-body">
+      <form method="post">
+        <input type="hidden" name="action" value="add_criterion">
+        <div class="field">
+          <label for="new_title">Criterion</label>
+          <input type="text" id="new_title" name="title" required>
+        </div>
+        <div class="field">
+          <label for="new_description">What a good answer looks like</label>
+          <input type="text" id="new_description" name="description">
+        </div>
+        <div class="field" style="max-width:9rem">
+          <label for="new_points">Points</label>
+          <input type="number" id="new_points" name="max_points" step="0.5" min="0.5"
+                 value="{{ rubric.points_per_criterion|num }}">
+        </div>
+        <button type="submit" class="button">Add it</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h3 class="grow">Remove a criterion</h3></div>
+    <div class="card-body">
+      {% if rubric.criteria %}
+      <form method="post" data-confirm="Remove that criterion?">
+        <input type="hidden" name="action" value="delete_criterion">
+        <div class="field">
+          <label for="criterion_id">Which one</label>
+          <select id="criterion_id" name="criterion_id">
+            {% for criterion in rubric.criteria %}
+              <option value="{{ criterion.id }}">{{ criterion.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="button button-danger">Remove it</button>
+      </form>
+      {% else %}
+      <p class="small muted mb0">Nothing to remove.</p>
+      {% endif %}
+
+      <hr>
+      <h4>Delete the whole rubric</h4>
+      <form method="post">
+        <input type="hidden" name="action" value="delete">
+        <div class="field">
+          <label for="confirm">Type DELETE if it has already been used</label>
+          <input type="text" id="confirm" name="confirm" class="mono" placeholder="DELETE">
+        </div>
+        <button type="submit" class="button button-danger">Delete the rubric</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

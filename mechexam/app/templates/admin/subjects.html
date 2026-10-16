@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}All subjects · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Subjects
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Subjects</h1>
+    <p class="page-sub">
+      Adding and deleting subjects is an administrator's job. Instructors work
+      only with the subjects assigned to them.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body tight">
+    <form method="get" class="flex">
+      <div>
+        <label for="filter_year" class="visually-hidden">School year</label>
+        <select id="filter_year" name="school_year" onchange="this.form.submit()">
+          {% for option in years %}
+            <option value="{{ option }}" {{ 'selected' if option == filter_year }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="filter_semester" class="visually-hidden">Semester</label>
+        <select id="filter_semester" name="semester" onchange="this.form.submit()">
+          {% for option in semesters %}
+            <option value="{{ option }}" {{ 'selected' if option == filter_semester }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <span class="grow small muted">
+        Showing {{ listing|length }} subject{{ '' if listing|length == 1 else 's' }}
+        for {{ filter_semester }}, {{ filter_year }}.
+      </span>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Subjects in this term</h2></div>
+  <div class="card-body flush">
+    {% if listing %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Code</th><th>Title</th><th class="num">Units</th>
+            <th class="mid">Lab</th><th>Instructor</th><th class="mid">State</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for course in listing %}
+          <tr>
+            <td><a href="{{ url_for('courses.detail', course_id=course.id) }}">
+              <strong>{{ course.code }}</strong></a></td>
+            <td class="small">{{ course.title }}</td>
+            <td class="num">{{ course.units|num }}</td>
+            <td class="mid">{{ 'Yes' if course.has_laboratory else '—' }}</td>
+            <td>
+              <form method="post" action="{{ url_for('admin.subject_assign', course_id=course.id) }}"
+                    class="flex" style="gap:0.3rem">
+                <select name="owner_id" style="min-width:11rem">
+                  <option value="">— unassigned —</option>
+                  {% for teacher in instructors %}
+                    <option value="{{ teacher.id }}" {{ 'selected' if course.owner_id == teacher.id }}>
+                      {{ teacher.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="button button-small">Set</button>
+              </form>
+            </td>
+            <td class="mid">
+              {% if course.is_finalised %}<span class="pill pill-info">finalised</span>
+              {% elif course.grades_released %}<span class="pill pill-pass">grades shown</span>
+              {% else %}<span class="pill">in progress</span>{% endif %}
+            </td>
+            <td class="right nowrap">
+              <a class="button button-small" href="{{ url_for('courses.detail', course_id=course.id) }}">Open</a>
+              <form class="inline-form" method="post"
+                    action="{{ url_for('admin.subject_delete', course_id=course.id) }}"
+                    data-confirm="Delete {{ course.code }}? Only an empty subject can be deleted.">
+                <button type="submit" class="button button-small button-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9776;</span>
+      <p>No subjects for {{ filter_semester }}, {{ filter_year }} yet. Add the first one below.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Add a subject</h2></div>
+  <div class="card-body">
+    <form method="post">
+      <div class="field-row">
+        <div class="field">
+          <label for="code">Subject code</label>
+          <input type="text" id="code" name="code" placeholder="ME 412" required>
+        </div>
+        <div class="field" style="flex:2 1 20rem">
+          <label for="title">Descriptive title</label>
+          <input type="text" id="title" name="title" placeholder="Thermodynamics 1" required>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="units">Total units</label>
+          <input type="number" id="units" name="units" step="0.5" min="0" value="3">
+        </div>
+        <div class="field">
+          <label for="lec_units">Lecture units</label>
+          <input type="number" id="lec_units" name="lec_units" step="0.5" min="0" value="3">
+        </div>
+        <div class="field">
+          <label for="lab_units">Laboratory units</label>
+          <input type="number" id="lab_units" name="lab_units" step="0.5" min="0" value="0">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="new_year">School year</label>
+          <input type="text" id="new_year" name="school_year" value="{{ filter_year }}">
+        </div>
+        <div class="field">
+          <label for="new_semester">Semester</label>
+          <select id="new_semester" name="semester">
+            {% for option in semesters %}
+              <option value="{{ option }}" {{ 'selected' if option == filter_semester }}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="owner_id">Instructor</label>
+          <select id="owner_id" name="owner_id">
+            <option value="">— assign later —</option>
+            {% for teacher in instructors %}
+              <option value="{{ teacher.id }}">{{ teacher.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="2"></textarea>
+      </div>
+
+      <label class="check">
+        <input type="checkbox" name="has_laboratory" value="1">
+        <span>This subject has a laboratory
+          <span class="check-note">Adds the laboratory components (20% / 60% / 20%)
+            and makes the final grade 67% lecture plus 33% laboratory.</span></span>
+      </label>
+
+      <button type="submit" class="button button-primary">Add subject</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Gradebook — {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.index') }}">Gradebook</a><span>/</span>
+  <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Grades
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ course.code }} — {{ course.title }}</h1>
+    <p class="page-sub">
+      {{ course.term_label }} &middot; {{ results|length }} student{{ '' if results|length == 1 else 's' }}
+      &middot; {{ 'total points ÷ total possible' if course.averaging_method == 'total_points'
+                  else "average of each activity's percentage" }}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
+      Grade sheet
+    </a>
+    <a class="button" href="{{ url_for('gradebook.export_csv', course_id=course.id, section=section_id) }}">
+      Export CSV
+    </a>
+    <a class="button" href="{{ url_for('gradebook.removal', course_id=course.id) }}">
+      Removal examination
+      {% if candidates %}<span class="pill pill-removal">{{ candidates }}</span>{% endif %}
+    </a>
+    {% if course.is_finalised %}
+      <form class="inline-form" method="post" action="{{ url_for('gradebook.reopen', course_id=course.id) }}"
+            data-confirm="Reopen this subject? The frozen grades are discarded and computed live again.">
+        <button type="submit" class="button button-gold">Reopen</button>
+      </form>
+    {% else %}
+      <a class="button button-primary" href="{{ url_for('gradebook.finalise', course_id=course.id) }}">
+        Finalise grades
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if course.is_finalised %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      This subject was finalised on {{ course.finalised_at|dt }}. The grades of
+      record are frozen; the figures below are still computed live so you can
+      see the effect of any change. Reopen the subject to make a change count.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="flex mb1">
+  {% if has_laboratory %}
+  <div class="tabs" style="margin-bottom:0;border:0">
+    <a class="tab {{ 'active' if scope == 'lecture' }}"
+       href="{{ url_for('gradebook.course', course_id=course.id, scope='lecture', section=section_id) }}">
+      Lecture
+    </a>
+    <a class="tab {{ 'active' if scope == 'laboratory' }}"
+       href="{{ url_for('gradebook.course', course_id=course.id, scope='laboratory', section=section_id) }}">
+      Laboratory
+    </a>
+  </div>
+  {% endif %}
+  <span class="grow"></span>
+  <div style="max-width:16rem">
+    <input type="search" data-filter-target="#grid tbody tr" placeholder="Find a student">
+  </div>
+</div>
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('gradebook.course', course_id=course.id, scope=scope) }}">All sections</a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('gradebook.course', course_id=course.id, scope=scope, section=section.id) }}">
+      {{ section.name }}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-4 mb2">
+  <div class="stat"><div class="label">Passed</div>
+    <div class="value" style="color:var(--green-600)">{{ tally.passed }}</div></div>
+  <div class="stat"><div class="label">For removal</div>
+    <div class="value" style="color:var(--amber-600)">{{ tally.removal }}</div></div>
+  <div class="stat"><div class="label">Failed</div>
+    <div class="value" style="color:var(--red-600)">{{ tally.failed }}</div></div>
+  <div class="stat"><div class="label">Incomplete</div>
+    <div class="value">{{ tally.incomplete }}</div>
+    <div class="note">no marks recorded yet</div></div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">{{ scope|title }} marks</h2>
+    <span class="small muted">
+      An empty cell means nothing recorded — it is not counted as a zero.
+    </span>
+  </div>
+  <div class="card-body flush">
+    {% if results %}
+    <div class="table-wrap">
+      <table class="data" id="grid">
+        <thead>
+          <tr>
+            <th class="sticky-name" rowspan="2">Student</th>
+            {% for component in components %}
+              <th class="mid" colspan="{{ (component.items|length or 1) + 1 }}">
+                {{ component.name }}
+                <div class="tiny" style="font-weight:500">{{ component.weight_percent|num }}%</div>
+              </th>
+            {% endfor %}
+            <th class="num" rowspan="2">{{ scope|title }} %</th>
+            <th class="num" rowspan="2">Final %</th>
+            <th class="mid" rowspan="2">Grade</th>
+            <th class="mid" rowspan="2">Remark</th>
+          </tr>
+          <tr>
+            {% for component in components %}
+              {% for item in component.items %}
+                <th class="num tiny" title="{{ item.title }} — out of {{ item.max_points|num }}">
+                  <a href="{{ url_for('gradebook.item', item_id=item.id) }}">
+                    {{ item.title|truncate(14) }}</a>
+                  <div style="font-weight:500">/{{ item.max_points|num }}</div>
+                </th>
+              {% endfor %}
+              {% if not component.items %}
+                <th class="tiny muted">none yet</th>
+              {% endif %}
+              <th class="num tiny" style="border-left:1px solid var(--line)">%</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for result in results %}
+          <tr data-search="{{ result.student.name }} {{ result.student.student_number or '' }}">
+            <td class="sticky-name">
+              <a href="{{ url_for('gradebook.student_detail', course_id=course.id, student_id=result.student.id) }}">
+                {{ result.student.name }}</a>
+              <div class="tiny muted mono">{{ result.student.student_number or '' }}</div>
+            </td>
+
+            {% set scope_result = result.laboratory if scope == 'laboratory' else result.lecture %}
+            {% for component in scope_result.components %}
+              {% for entry in component.entries %}
+                <td class="num">
+                  {% if entry.points is not none %}
+                    {{ entry.points|num }}{% if entry.is_override %}<span title="entered by hand">*</span>{% endif %}
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+              {% endfor %}
+              {% if not component.entries %}
+                <td class="muted mid">—</td>
+              {% endif %}
+              <td class="num strong" style="border-left:1px solid var(--line)">
+                {{ component.raw_percent|pct }}
+              </td>
+            {% endfor %}
+
+            <td class="num strong">{{ scope_result.percent|pct }}</td>
+            <td class="num strong">{{ result.final_display }}</td>
+            <td class="mid">
+              <span class="grade {{ 'grade-pass' if result.effective_remark == 'Passed'
+                                    else ('grade-removal' if result.effective_remark == 'Removal' else 'grade-fail') }}">
+                {{ result.effective_grade }}
+              </span>
+              {% if result.frozen and result.frozen.was_bumped %}
+                <div class="tiny muted" title="Adjusted one step for the removal examination">adjusted</div>
+              {% endif %}
+            </td>
+            <td class="mid">
+              <span class="pill {{ 'pill-pass' if result.effective_remark == 'Passed'
+                                   else ('pill-removal' if result.effective_remark == 'Removal'
+                                   else ('pill-info' if result.effective_remark == 'Incomplete' else 'pill-fail')) }}">
+                {{ result.effective_remark }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9823;</span>
+      <p>No students in this {{ 'section' if section_id else 'subject' }} yet.</p>
+      <a class="button button-primary" href="{{ url_for('courses.enrol', course_id=course.id) }}">
+        Enrol students
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb0">
+      A star beside a mark means it was entered or corrected by hand. Click a
+      column heading to enter marks for that activity, or a student's name for
+      their full breakdown. Add new activities from the
+      <a href="{{ url_for('courses.detail', course_id=course.id) }}#add-activity">subject page</a>.
+    </p>
+  </div>
+</div>
+{% endblock %}

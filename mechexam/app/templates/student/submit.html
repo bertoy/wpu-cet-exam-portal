@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Upload — {{ item.title }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('student.progress', subject=course.id) }}">{{ course.code }}</a><span>/</span>
+  Upload
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ item.title }}</h1>
+    <p class="page-sub">
+      {{ course.code }} &middot; {{ item.type_label }} &middot; out of {{ item.max_points|num }}
+    </p>
+  </div>
+</div>
+
+{% if item.instructions %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow"><p class="mb0">{{ item.instructions }}</p></div>
+</div>
+{% endif %}
+
+{% if item.rubric %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">How this will be marked</h2></div>
+  <div class="card-body flush">
+    <table class="data table-compact">
+      <thead><tr><th>Criterion</th><th class="num">Points</th></tr></thead>
+      <tbody>
+        {% for criterion in item.rubric.criteria %}
+        <tr>
+          <td>
+            {{ criterion.title }}
+            {% if criterion.description %}<div class="tiny muted">{{ criterion.description }}</div>{% endif %}
+          </td>
+          <td class="num">{{ criterion.max_points|num }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td>Total</td><td class="num">{{ item.rubric.total_points|num }}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if existing %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">What you have submitted</h2>
+    <span class="pill pill-pass">received</span>
+  </div>
+  <div class="card-body">
+    <dl class="kv mb2">
+      <dt>File</dt>
+      <dd>
+        <a href="{{ url_for('student.submission_file', submission_id=existing.id) }}">
+          {{ existing.filename }}</a>
+      </dd>
+      <dt>Size</dt><dd>{{ (existing.size_bytes / 1024)|round(1) }} KB</dd>
+      <dt>Submitted</dt><dd>{{ existing.submitted_at|dt }}</dd>
+      {% if existing.note %}<dt>Your note</dt><dd>{{ existing.note }}</dd>{% endif %}
+    </dl>
+
+    {% if existing.is_video %}
+      <video controls style="width:100%;max-height:420px;border-radius:var(--radius)">
+        <source src="{{ url_for('student.submission_file', submission_id=existing.id) }}"
+                type="{{ existing.mime_type }}">
+        Your browser cannot play this video. You can still download it above.
+      </video>
+    {% elif existing.is_image %}
+      <img src="{{ url_for('student.submission_file', submission_id=existing.id) }}"
+           alt="Your submission" style="border-radius:var(--radius);border:1px solid var(--line)">
+    {% endif %}
+
+    {% if existing.drive_url %}
+      <p class="small mt1 mb0">
+        A copy is in your instructor's Drive folder —
+        <a href="{{ existing.drive_url }}" target="_blank" rel="noopener">open it</a>.
+      </p>
+    {% elif existing.drive_error %}
+      <div class="callout callout-info mt1">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            Your file is safely stored here and your instructor can see it.
+            Copying it into their Drive folder did not work, which is a setting
+            on their side — nothing for you to do.
+          </p>
+        </div>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('student.withdraw', submission_id=existing.id) }}"
+          data-confirm="Withdraw this submission?" class="mt2">
+      <button type="submit" class="button button-small button-danger">Withdraw</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">{{ 'Replace your file' if existing else 'Upload your file' }}</h2>
+  </div>
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" data-warn-unsaved>
+      <div class="field">
+        <label for="file">Choose the file</label>
+        <input type="file" id="file" name="file" required>
+        <p class="field-hint">
+          Up to {{ config.MAX_CONTENT_LENGTH // (1024 * 1024) }} MB. It is sent
+          straight to your instructor — there is nothing else to open or drag.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="note">A note for your instructor <span class="muted">(optional)</span></label>
+        <textarea id="note" name="note" rows="2">{{ existing.note if existing else '' }}</textarea>
+      </div>
+
+      <div class="button-row">
+        <button type="submit" class="button button-primary">
+          {{ 'Replace my submission' if existing else 'Submit' }}
+        </button>
+        <a class="button" href="{{ url_for('student.progress', subject=course.id) }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

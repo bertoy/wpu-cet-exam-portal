@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Grade slip · {{ student.display_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="page-head">
+    <div class="grow">
+      <h1>Grade slip</h1>
+      <p class="page-sub">One student's full breakdown, ready to hand over.</p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('gradebook.student_detail', course_id=course.id, student_id=student.id) }}">
+        Back
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="sheet">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">Statement of Grade</p>
+  </div>
+
+  <table style="width:100%;margin-bottom:1rem;font-size:0.88rem">
+    <tr>
+      <td style="width:50%"><strong>Student:</strong> {{ student.name }}</td>
+      <td><strong>Student No.:</strong> {{ student.student_number or '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Programme:</strong> {{ student.program or '—' }}</td>
+      <td><strong>Year Level:</strong> {{ student.year_level or '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Section:</strong>
+        {{ enrolment.section.name if enrolment and enrolment.section else '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+      <td><strong>Units:</strong> {{ course.units|num }}</td>
+    </tr>
+  </table>
+
+  {% for scope in [result.lecture, result.laboratory] %}
+    {% if scope and scope.has_data %}
+    <h3 style="font-size:0.95rem;margin-bottom:0.3rem">{{ scope.label }}</h3>
+    <table class="data" style="margin-bottom:1rem">
+      <thead>
+        <tr>
+          <th>Component</th><th>Activity</th>
+          <th class="num">Score</th><th class="num">Out of</th><th class="num">%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for component in scope.components %}
+          {% for entry in component.entries %}
+          <tr>
+            {% if loop.first %}
+              <td rowspan="{{ component.entries|length + 1 }}">
+                {{ component.name }} ({{ component.weight|num }}%)
+              </td>
+            {% endif %}
+            <td>{{ entry.item.title }}</td>
+            <td class="num">{{ entry.display }}</td>
+            <td class="num">{{ entry.max_points|num }}</td>
+            <td class="num">{{ entry.percent|pct }}</td>
+          </tr>
+          {% endfor %}
+          {% if component.entries %}
+          <tr>
+            <td colspan="3" class="right"><strong>{{ component.name }} average</strong></td>
+            <td class="num"><strong>{{ component.raw_percent|pct }}%</strong></td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4" class="right">{{ scope.label }} standing</td>
+          <td class="num"><strong>{{ scope.percent|pct }}%</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endif %}
+  {% endfor %}
+
+  <table class="data" style="margin-bottom:1rem">
+    <tbody>
+      <tr>
+        <td><strong>Lecture</strong></td>
+        <td class="num">{{ result.lecture.percent|pct }}%</td>
+        <td class="num">× {{ course.lecture_share|num if course.has_laboratory else 100 }}%</td>
+      </tr>
+      {% if course.has_laboratory %}
+      <tr>
+        <td><strong>Laboratory</strong></td>
+        <td class="num">{{ result.laboratory.percent|pct if result.laboratory else '—' }}%</td>
+        <td class="num">× {{ course.laboratory_share|num }}%</td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td><strong>Final standing</strong></td>
+        <td class="num"><strong>{{ result.final_display }}%</strong></td>
+        <td class="num"></td>
+      </tr>
+      <tr>
+        <td><strong>Grade</strong></td>
+        <td class="num"><strong style="font-size:1.1rem">{{ result.effective_grade }}</strong></td>
+        <td class="num"><strong>{{ result.effective_remark }}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  {% if result.effective_remark == 'Removal' %}
+  <p style="font-size:0.82rem">
+    This standing falls within the removal band
+    ({{ course.removal_low|pct }}–{{ course.removal_high|pct }}%). Passing the
+    removal examination gives a grade of 3.00.
+  </p>
+  {% endif %}
+
+  {% if result.frozen and result.frozen.was_bumped %}
+  <p style="font-size:0.82rem">
+    This grade was adjusted one step higher from
+    {{ result.frozen.pre_removal_grade }} because a removal examination was
+    held in this subject.
+  </p>
+  {% endif %}
+
+  <div class="signatures" style="grid-template-columns:repeat(2, 1fr)">
+    <div class="signature">
+      <div class="rule">{{ course.owner.display_name if course.owner else '' }}</div>
+      <div class="role">Instructor</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Received by the student</div>
+    </div>
+  </div>
+
+  <p style="font-size:0.72rem;margin-top:1rem;color:#555">
+    Printed {{ printed_on.strftime('%d %B %Y at %I:%M %p') }}
+    {%- if not course.is_finalised %} &middot; <strong>provisional</strong>{% endif %}
+  </p>
+</div>
+{% endblock %}

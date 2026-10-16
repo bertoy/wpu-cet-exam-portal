@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Finalise grades · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.index') }}">Gradebook</a><span>/</span>
+  <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Finalise
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Finalise the grades — {{ course.code }}</h1>
+    <p class="page-sub">
+      Everything below is a preview. Nothing is recorded until you confirm.
+    </p>
+  </div>
+</div>
+
+{% if course.is_finalised %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      This subject was finalised on {{ course.finalised_at|dt }}.
+      <form class="inline-form" method="post" action="{{ url_for('gradebook.reopen', course_id=course.id) }}"
+            data-confirm="Reopen the subject? The frozen grades are discarded.">
+        <button type="submit" class="button button-small button-gold">Reopen it</button>
+      </form>
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid grid-4 mb2">
+  <div class="stat"><div class="label">Passing</div>
+    <div class="value" style="color:var(--green-600)">{{ tally.passed }}</div></div>
+  <div class="stat"><div class="label">For removal</div>
+    <div class="value" style="color:var(--amber-600)">{{ tally.removal }}</div></div>
+  <div class="stat"><div class="label">Failing</div>
+    <div class="value" style="color:var(--red-600)">{{ tally.failed }}</div></div>
+  <div class="stat"><div class="label">Incomplete</div>
+    <div class="value">{{ tally.incomplete }}</div></div>
+</div>
+
+{% if held_removal %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      A removal examination has been held and marks recorded. Finalising will
+      therefore also <strong>move every passing grade one step higher</strong>,
+      as the column below shows.
+    </p>
+  </div>
+</div>
+{% elif removal %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      A removal examination exists but has no marks recorded yet. Candidates
+      will be left with a failing grade and the remark “Removal”.
+      <a href="{{ url_for('gradebook.removal', course_id=course.id) }}">Record the marks first</a>
+      if the examination has been held.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">What finalising will do</h2>
+    <div style="max-width:16rem">
+      <input type="search" data-filter-target="#preview tbody tr" placeholder="Find a student">
+    </div>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data" id="preview">
+        <thead>
+          <tr>
+            <th>Student</th><th class="num">Lecture %</th>
+            {% if course.has_laboratory %}<th class="num">Laboratory %</th>{% endif %}
+            <th class="num">Final %</th><th class="mid">Grade now</th>
+            <th class="mid">Grade recorded</th><th>Why it changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview %}
+          {% set result = row.result %}
+          <tr data-search="{{ result.student.name }} {{ result.student.student_number or '' }}">
+            <td>
+              {{ result.student.name }}
+              <div class="tiny muted mono">{{ result.student.student_number or '' }}</div>
+            </td>
+            <td class="num">{{ result.lecture.percent|pct }}</td>
+            {% if course.has_laboratory %}
+              <td class="num">{{ result.laboratory.percent|pct if result.laboratory else '—' }}</td>
+            {% endif %}
+            <td class="num strong">{{ result.final_display }}</td>
+            <td class="mid">
+              <span class="grade {{ 'grade-pass' if result.is_passing else 'grade-fail' }}">
+                {{ result.grade }}
+              </span>
+            </td>
+            <td class="mid">
+              <span class="grade {{ 'grade-pass' if row.after in ('1.00','1.25','1.50','1.75','2.00','2.25','2.50','2.75','3.00')
+                                    else 'grade-fail' }}">
+                {{ row.after }}
+              </span>
+            </td>
+            <td class="small">{{ row.note or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if not course.is_finalised %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Confirm</h2></div>
+  <div class="card-body">
+    <p class="small">
+      Finalising writes the grades above into the record and freezes them, so
+      later changes to a mark no longer alter a student's grade. It is
+      reversible — reopening the subject discards the frozen grades and
+      computes them live again.
+    </p>
+    <form method="post" data-confirm="Finalise the grades for {{ course.code }}?">
+      <div class="field" style="max-width:18rem">
+        <label for="confirm">Type FINALISE to confirm</label>
+        <input type="text" id="confirm" name="confirm" class="mono" placeholder="FINALISE" required>
+      </div>
+      <div class="button-row">
+        <button type="submit" class="button button-primary button-large">
+          Finalise the grades
+        </button>
+        <a class="button" href="{{ url_for('gradebook.course', course_id=course.id) }}">Not yet</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="button-row mb2">
+  <a class="button button-primary" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">
+    Open the grade sheet to print
+  </a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}My details · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>My details</h1>
+    <p class="page-sub">{{ current_user.display_name }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Set by your school</h2></div>
+  <div class="card-body">
+    <dl class="kv">
+      <dt>Name</dt><dd>{{ current_user.name }}</dd>
+      <dt>Student number</dt><dd class="mono">{{ current_user.student_number or '—' }}</dd>
+      <dt>Username</dt><dd class="mono">{{ current_user.username }}</dd>
+      <dt>Programme</dt><dd>{{ current_user.program or '—' }}</dd>
+      <dt>Year level</dt><dd>{{ current_user.year_level or '—' }}</dd>
+    </dl>
+    <p class="tiny muted mt1 mb0">
+      Ask your instructor or the registrar to correct any of these.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">What you can change</h2></div>
+  <div class="card-body">
+    <form method="post">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{ current_user.email or '' }}">
+      </div>
+      <div class="field">
+        <label for="contact">Contact number</label>
+        <input type="tel" id="contact" name="contact" value="{{ current_user.contact or '' }}">
+      </div>
+      <div class="field">
+        <label for="theme">Appearance</label>
+        <select id="theme" name="theme">
+          <option value="system" {{ 'selected' if current_user.theme == 'system' }}>Match my device</option>
+          <option value="light" {{ 'selected' if current_user.theme == 'light' }}>Light</option>
+          <option value="dark" {{ 'selected' if current_user.theme == 'dark' }}>Dark</option>
+        </select>
+      </div>
+      <button type="submit" class="button button-primary">Save</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Password</h2></div>
+  <div class="card-body">
+    {% if Setting.get_bool('allow_student_self_password') %}
+      <p class="small">You can set your own password whenever you like.</p>
+      <a class="button" href="{{ url_for('auth.change_password') }}">Change my password</a>
+    {% else %}
+      <p class="small muted mb0">
+        Passwords are set by your instructor. Ask them for a reset code if you
+        need a new one.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{% if courses %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">My subjects</h2></div>
+  <div class="card-body flush">
+    <table class="data table-compact">
+      <thead><tr><th>Code</th><th>Subject</th><th>Term</th></tr></thead>
+      <tbody>
+        {% for course in courses %}
+        <tr>
+          <td><strong>{{ course.code }}</strong></td>
+          <td class="small">{{ course.title }}</td>
+          <td class="tiny">{{ course.term_label }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Install this portal</h2></div>
+  <div class="card-body">
+    <p class="small">
+      You can add the portal to your phone's home screen and open it like any
+      other app. It also keeps working for a moment when the signal drops, and
+      your exam answers are saved as you type either way.
+    </p>
+    <button type="button" class="button" data-install style="display:none">
+      Install the app
+    </button>
+    <p class="tiny muted mt1 mb0">
+      If no button appears, open your browser's menu and choose
+      “Add to Home screen”.
+    </p>
+  </div>
+</div>
+{% endblock %}

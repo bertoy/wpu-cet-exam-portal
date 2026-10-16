@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}My portal · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="hero-inner">
+    <img class="hero-seal" src="{{ asset('img/me-seal.png') }}"
+         alt="Department of Mechanical Engineering seal">
+    <div class="grow">
+      <h1>{{ current_user.display_name }}</h1>
+      <p class="lede">
+        {% if current_user.student_number %}{{ current_user.student_number }} &middot; {% endif %}
+        {{ current_user.program or department_name }}
+        {%- if current_user.year_level %} &middot; {{ current_user.year_level }}{% endif %}
+      </p>
+      <span class="hero-term">{{ semester }}, {{ school_year }}</span>
+    </div>
+    <div class="hero-clock" data-clock>
+      <div class="time" data-clock-time>&nbsp;</div>
+      <div class="date" data-clock-date>&nbsp;</div>
+    </div>
+  </div>
+</div>
+
+{% if open_exams %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Open now</h2>
+    <span class="pill pill-open">ready to start</span>
+  </div>
+  <div class="card-body">
+    <div class="stack">
+      {% for exam in open_exams %}
+      <div class="flex-between" style="border:1px solid var(--line);border-radius:var(--radius);padding:0.8rem">
+        <div class="grow">
+          <strong>{{ exam.title }}</strong>
+          <div class="small muted">
+            {{ exam.course.code }} &middot; {{ exam.category }} &middot;
+            {{ exam.duration_minutes }} minutes &middot;
+            {{ exam.questions|length }} question{{ '' if exam.questions|length == 1 else 's' }}
+          </div>
+          <div class="tiny" style="color:var(--amber-600)">
+            Closes in {{ exam.seconds_remaining|mmss }} — the clock is the same for the whole class.
+          </div>
+        </div>
+        <a class="button button-gold" href="{{ url_for('taking.start', exam_id=exam.id) }}">Start</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">My subjects</h2>
+      <a class="button button-small" href="{{ url_for('student.progress') }}">My progress</a>
+    </div>
+    <div class="card-body {{ 'flush' if courses }}">
+      {% if courses %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Code</th><th>Subject</th><th></th></tr></thead>
+          <tbody>
+            {% for course in courses %}
+            <tr>
+              <td><strong>{{ course.code }}</strong></td>
+              <td class="small">{{ course.title }}</td>
+              <td class="right">
+                <a class="button button-small"
+                   href="{{ url_for('student.progress', subject=course.id) }}">Open</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9776;</span>
+        <p>You are not enrolled in any subject for this term yet.
+          Your instructor adds you to the class list.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">Recent exams</h2>
+      <a class="button button-small" href="{{ url_for('student.history') }}">All</a>
+    </div>
+    <div class="card-body {{ 'flush' if recent }}">
+      {% if recent %}
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead><tr><th>Exam</th><th class="num">Score</th><th>Submitted</th></tr></thead>
+          <tbody>
+            {% for attempt in recent %}
+            <tr>
+              <td>
+                <a href="{{ url_for('taking.review', attempt_id=attempt.id) }}">{{ attempt.exam.title }}</a>
+                <div class="tiny muted">{{ attempt.exam.course.code }}</div>
+              </td>
+              <td class="num">
+                {% if attempt.exam.show_score %}
+                  {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+                  <div class="tiny muted">{{ attempt.percent|pct }}%</div>
+                {% else %}
+                  <span class="muted">—</span>
+                {% endif %}
+              </td>
+              <td class="small nowrap">{{ attempt.submitted_at|dt('%d %b, %I:%M %p') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9998;</span>
+        <p>You have not taken any exam yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

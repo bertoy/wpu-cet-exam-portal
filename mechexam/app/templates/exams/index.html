@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Examinations · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Examinations</h1>
+    <p class="page-sub">{{ semester }}, {{ school_year }}</p>
+  </div>
+  <div class="button-row">
+    <a class="button button-primary" href="{{ url_for('exams.create') }}">New examination</a>
+    <a class="button" href="{{ url_for('exams.banks') }}">Question banks</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if rows %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Title</th><th>Subject</th><th>Kind</th>
+            <th class="num">Items</th><th class="num">Points</th>
+            <th class="num">Sat</th><th class="mid">State</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>
+              <a href="{{ url_for('exams.edit', exam_id=row.exam.id) }}">
+                <strong>{{ row.exam.title }}</strong></a>
+              {% if row.exam.topic %}<div class="tiny muted">{{ row.exam.topic }}</div>{% endif %}
+            </td>
+            <td class="small">{{ row.exam.course.code }}
+              {%- if row.exam.section %} <span class="tiny muted">{{ row.exam.section.name }}</span>{% endif %}</td>
+            <td class="small">{{ row.exam.category }}</td>
+            <td class="num">{{ row.questions }}</td>
+            <td class="num">{{ row.points|num }}</td>
+            <td class="num">
+              {{ row.submitted }}
+              {% if row.in_progress %}<div class="tiny" style="color:var(--amber-600)">{{ row.in_progress }} in progress</div>{% endif %}
+            </td>
+            <td class="mid">
+              {% if row.exam.is_open and not row.exam.is_expired %}
+                <span class="pill pill-open">open</span>
+                <div class="tiny">{{ row.exam.seconds_remaining|mmss }}</div>
+              {% elif row.exam.closed_at %}
+                <span class="pill pill-closed">closed</span>
+              {% else %}
+                <span class="pill">draft</span>
+              {% endif %}
+            </td>
+            <td class="right nowrap">
+              {% if row.exam.is_open %}
+                <a class="button button-small button-gold" href="{{ url_for('exams.monitor', exam_id=row.exam.id) }}">Monitor</a>
+              {% else %}
+                <a class="button button-small" href="{{ url_for('exams.edit', exam_id=row.exam.id) }}">Edit</a>
+              {% endif %}
+              <a class="button button-small" href="{{ url_for('exams.results', exam_id=row.exam.id) }}">Results</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9998;</span>
+      <h2>No examinations yet</h2>
+      <p>Create one, add the questions, and open it when the class is ready.</p>
+      <a class="button button-primary" href="{{ url_for('exams.create') }}">New examination</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

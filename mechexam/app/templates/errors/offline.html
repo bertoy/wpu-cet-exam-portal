@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set hide_sidebar = true %}
+{% block title %}Offline · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9889;</span>
+      <h1>You are offline</h1>
+      <p>
+        This page needs a connection. If you were in the middle of an exam,
+        your answers were saved as you typed — reconnect and open the exam
+        again to carry on.
+      </p>
+      <div class="button-row" style="justify-content:center">
+        <button type="button" class="button button-primary"
+                onclick="window.location.reload()">Try again</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

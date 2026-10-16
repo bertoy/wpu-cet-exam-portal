@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}System check · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>System check
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>System check</h1>
+    <p class="page-sub">
+      Everything needed to tell whether this deployment is healthy — without
+      reading server logs.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">This installation</h2></div>
+    <div class="card-body">
+      <dl class="kv">
+        <dt>Portal version</dt><dd>{{ info.version }}</dd>
+        <dt>Server time</dt><dd>{{ info.server_time }}</dd>
+        <dt>Current term</dt><dd>{{ info.term }}</dd>
+        <dt>Database</dt><dd><span class="pill pill-info">{{ info.dialect }}</span></dd>
+        <dt>Connection</dt><dd class="mono tiny">{{ info.database }}</dd>
+        <dt>Data folder</dt><dd class="mono tiny">{{ info.data_dir }}</dd>
+        <dt>Uploads folder</dt><dd class="mono tiny">{{ info.upload_dir }}</dd>
+        <dt>Upload limit</dt><dd>{{ info.max_upload_mb }} MB per file</dd>
+      </dl>
+
+      <div class="callout callout-info mt2">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            The data folder sits outside the program files, so replacing the
+            code — a redeployment, a file upload, a <span class="mono">git pull</span> —
+            cannot erase the database or the uploads.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Appearance &amp; assets</h2></div>
+    <div class="card-body">
+      <p class="small">
+        Stylesheets and scripts are served by the application at a URL that
+        carries a hash of the file's own contents. A host or browser cache can
+        only ever hold a URL matching bytes it actually received, so the
+        “pages render unstyled after an update” problem cannot arise.
+      </p>
+      <dl class="kv">
+        <dt>Stylesheet</dt>
+        <dd class="mono tiny">
+          {% if info.css_digest == 'missing' %}
+            <span class="pill pill-fail">missing</span>
+          {% else %}
+            <span class="pill pill-pass">loaded</span> {{ info.css_digest }}
+          {% endif %}
+        </dd>
+        <dt>Script</dt>
+        <dd class="mono tiny">
+          {% if info.js_digest == 'missing' %}
+            <span class="pill pill-fail">missing</span>
+          {% else %}
+            <span class="pill pill-pass">loaded</span> {{ info.js_digest }}
+          {% endif %}
+        </dd>
+        <dt>Equation renderer</dt>
+        <dd>
+          {% if info.katex_present %}
+            <span class="pill pill-pass">bundled locally</span>
+            <span class="tiny muted">no internet needed during exams</span>
+          {% else %}
+            <span class="pill pill-fail">not found</span>
+            <span class="tiny">Equations will show as plain LaTeX.</span>
+          {% endif %}
+        </dd>
+      </dl>
+      <p class="tiny muted mt1 mb0">
+        If a page ever looks unstyled, reload it once. The hash above changes
+        whenever the stylesheet does.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Database schema</h2></div>
+  <div class="card-body">
+    {% set schema = info.schema %}
+    {% if schema.errors %}
+      <div class="callout callout-error">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          <p><strong>The schema needs attention.</strong></p>
+          <ul class="small mb0">
+            {% for problem in schema.errors %}<li class="mono">{{ problem }}</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% else %}
+      <div class="callout callout-success">
+        <span class="glyph" aria-hidden="true">&#10003;</span>
+        <div class="grow">
+          <p class="mb0">
+            The database matches what the program expects.
+            {% if schema.added %}
+              {{ schema.added|length }} column(s) were added automatically at the
+              last start, so an older database has been brought up to date.
+            {% endif %}
+          </p>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if schema.added %}
+    <details class="panel">
+      <summary>Columns added at the last start <span class="tail">{{ schema.added|length }}</span></summary>
+      <div class="panel-body">
+        <p class="mono tiny mb0">{{ schema.added|join(', ') }}</p>
+      </div>
+    </details>
+    {% endif %}
+
+    <details class="panel">
+      <summary>Row counts <span class="tail">{{ table_counts|length }} tables</span></summary>
+      <div class="panel-body">
+        <div class="table-wrap">
+          <table class="data table-compact">
+            <thead><tr><th>Table</th><th class="num">Rows</th></tr></thead>
+            <tbody>
+              {% for name, count in table_counts.items() %}
+              <tr><td class="mono small">{{ name }}</td><td class="num">{{ count }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Google Drive</h2></div>
+  <div class="card-body">
+    {% set drive = info.drive %}
+    {% set ok = drive.status.startswith('ready') %}
+    <div class="callout {{ 'callout-success' if ok else 'callout-warning' }}">
+      <span class="glyph" aria-hidden="true">{{ '&#10003;'|safe if ok else '&#9888;'|safe }}</span>
+      <div class="grow">
+        <p class="mb0"><strong>{{ drive.status|title }}.</strong> {{ drive.detail }}</p>
+      </div>
+    </div>
+
+    <dl class="kv">
+      <dt>Client libraries</dt>
+      <dd>{{ 'installed' if drive.library_installed else 'not installed' }}</dd>
+      <dt>Credentials</dt>
+      <dd>{{ drive.source or 'none set' }}</dd>
+      {% if drive.service_account %}
+        <dt>Service account</dt><dd class="mono tiny">{{ drive.service_account }}</dd>
+      {% endif %}
+      {% if drive.project_id %}
+        <dt>Project</dt><dd class="mono tiny">{{ drive.project_id }}</dd>
+      {% endif %}
+      {% if drive.impersonating %}
+        <dt>Uploading as</dt><dd class="mono tiny">{{ drive.impersonating }}</dd>
+      {% endif %}
+    </dl>
+
+    <div class="callout callout-info mt2">
+      <span class="glyph" aria-hidden="true">&#8505;</span>
+      <div class="grow">
+        <p class="mb0">
+          Student submissions are always stored on this server first, so a
+          Drive problem never costs anyone their work. Credentials are read
+          from the environment — never from a file kept with the code.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Backup &amp; restore</h2></div>
+  <div class="card-body">
+    <p class="small">
+      A backup is a single file holding every record — accounts, subjects,
+      marks, exams, attempts. It restores into either kind of database, so a
+      copy taken here can be loaded onto a different host. Take one at the end
+      of every term, and before any redeployment.
+    </p>
+
+    <div class="grid grid-2">
+      <div>
+        <h4>Take a backup</h4>
+        <form method="post" action="{{ url_for('admin.make_backup') }}">
+          <button type="submit" class="button button-primary">
+            Download a backup now
+          </button>
+        </form>
+        <p class="tiny muted mt1">
+          A copy is also kept on the server, listed below.
+        </p>
+      </div>
+
+      <div>
+        <h4>Restore</h4>
+        <form method="post" action="{{ url_for('admin.restore') }}"
+              enctype="multipart/form-data"
+              data-confirm="Restoring replaces the current records. Continue?">
+          <div class="field">
+            <label for="backup">Backup file</label>
+            <input type="file" id="backup" name="backup" accept=".json,application/json" required>
+          </div>
+          <div class="field">
+            <label for="mode">How to restore</label>
+            <select id="mode" name="mode">
+              <option value="replace">Replace everything</option>
+              <option value="merge">Add missing records only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="confirm">Type REPLACE to confirm a full restore</label>
+            <input type="text" id="confirm" name="confirm" class="mono" placeholder="REPLACE">
+          </div>
+          <button type="submit" class="button button-danger">Restore</button>
+        </form>
+      </div>
+    </div>
+
+    {% if backups %}
+    <h4 class="mt2">Backups on this server</h4>
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead><tr><th>File</th><th class="num">Size</th><th>Taken</th><th></th></tr></thead>
+        <tbody>
+          {% for row in backups %}
+          <tr>
+            <td class="mono small">{{ row.name }}</td>
+            <td class="num">{{ row.size_kb }} KB</td>
+            <td class="small nowrap">{{ row.created|dt }}</td>
+            <td class="right">
+              <a class="button button-small"
+                 href="{{ url_for('admin.download_backup', name=row.name) }}">Download</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="tiny muted mt1 mb0">
+      A backup contains password hashes and every student's marks. Keep it as
+      carefully as you would the paper records.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

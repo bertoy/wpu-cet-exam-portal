@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}Monitor · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Monitor
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ exam.title }}</h1>
+    <p class="page-sub">
+      {{ exam.course.code }}
+      {%- if exam.section %} &middot; section {{ exam.section.name }}{% endif %}
+      &middot; PIN <strong class="mono">{{ exam.access_code }}</strong>
+      &middot; {{ exam.questions|length }} items, {{ exam.total_points|num }} points
+    </p>
+  </div>
+  <div class="button-row">
+    {% if exam.is_open and not exam.is_expired %}
+      <div class="timer" data-monitor-timer>
+        <span class="clock">{{ seconds_remaining|mmss }}</span>
+        <span class="label">left</span>
+      </div>
+      <form class="inline-form" method="post" action="{{ url_for('exams.close_exam', exam_id=exam.id) }}"
+            data-confirm="Close the exam for everyone now? Anything on screen is submitted.">
+        <button type="submit" class="button button-danger">Close now</button>
+      </form>
+    {% else %}
+      <span class="pill pill-closed">closed</span>
+      <a class="button button-primary" href="{{ url_for('exams.results', exam_id=exam.id) }}">Results</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Not started</div>
+    <div class="value" data-count-not-started>—</div>
+  </div>
+  <div class="stat">
+    <div class="label">Working now</div>
+    <div class="value" data-count-in-progress>—</div>
+  </div>
+  <div class="stat">
+    <div class="label">Submitted</div>
+    <div class="value" data-count-submitted>—</div>
+  </div>
+  <div class="stat">
+    <div class="label">Class size</div>
+    <div class="value">{{ rows|length }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Who is where</h2>
+    <span class="small muted" data-monitor-updated>refreshing…</span>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data" id="monitor-table">
+        <thead>
+          <tr>
+            <th>Student</th><th class="mid">State</th><th class="num">Answered</th>
+            <th class="num">Score</th><th class="mid">Flags</th><th>Last seen</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr data-student-row="{{ row.student.id }}">
+            <td>
+              <strong>{{ row.student.name }}</strong>
+              <div class="tiny muted mono">{{ row.student.student_number or '' }}</div>
+            </td>
+            <td class="mid" data-cell="status">—</td>
+            <td class="num" data-cell="answered">—</td>
+            <td class="num" data-cell="score">—</td>
+            <td class="mid" data-cell="events">—</td>
+            <td class="small nowrap" data-cell="last_seen">—</td>
+            <td class="right nowrap" data-cell="actions"></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb0">
+      “Flags” counts the times a student left the exam window. A screen going
+      to sleep is recorded separately and is not held against anyone. Open an
+      attempt to see the detail, give time back, or clear it for a fresh start.
+    </p>
+  </div>
+</div>
+
+{% if not rows %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      No students are enrolled in this {{ 'section' if exam.section else 'subject' }},
+      so nobody can sit the exam.
+      <a href="{{ url_for('courses.enrol', course_id=exam.course_id) }}">Enrol students</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  var endpoint = {{ url_for('api.exam_monitor', exam_id=exam.id)|tojson }};
+  var expireUrl = {{ url_for('api.expire_check', exam_id=exam.id)|tojson }};
+  // Built with a placeholder id, because some of these routes carry a suffix
+  // after it ("/reopen"), so trimming a trailing zero would not work.
+  var attemptBase = {{ url_for('exams.attempt_detail', attempt_id=987654321)|tojson }};
+  var reopenBase = {{ url_for('exams.attempt_reopen', attempt_id=987654321)|tojson }};
+  var resetBase = {{ url_for('exams.attempt_reset', attempt_id=987654321)|tojson }};
+
+  var timer = document.querySelector("[data-monitor-timer] .clock");
+  var updated = document.querySelector("[data-monitor-updated]");
+  var remaining = {{ seconds_remaining }};
+  var isOpen = {{ 'true' if exam.is_open and not exam.is_expired else 'false' }};
+
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+  function format(seconds) {
+    if (seconds < 0) seconds = 0;
+    var h = Math.floor(seconds / 3600);
+    var m = Math.floor((seconds % 3600) / 60);
+    var s = seconds % 60;
+    return h > 0 ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
+  }
+
+  var LABELS = {
+    not_started: '<span class="pill">not started</span>',
+    in_progress: '<span class="pill pill-open">working</span>',
+    submitted: '<span class="pill pill-pass">submitted</span>'
+  };
+
+  function url(base, id) { return base.replace("987654321", String(id)); }
+
+  function refresh() {
+    var request = new XMLHttpRequest();
+    request.open("GET", endpoint, true);
+    request.onload = function () {
+      if (request.status !== 200) return;
+      var data;
+      try { data = JSON.parse(request.responseText); } catch (e) { return; }
+
+      remaining = data.seconds_remaining;
+      isOpen = data.open;
+      if (timer) timer.textContent = format(remaining);
+
+      var counts = data.counts || {};
+      setText("[data-count-not-started]", counts.not_started);
+      setText("[data-count-in-progress]", counts.in_progress);
+      setText("[data-count-submitted]", counts.submitted);
+
+      for (var i = 0; i < data.rows.length; i++) {
+        var row = data.rows[i];
+        var tr = document.querySelector('[data-student-row="' + row.student_id + '"]');
+        if (!tr) continue;
+
+        cell(tr, "status").innerHTML = LABELS[row.status] || row.status;
+        cell(tr, "answered").textContent = row.status === "not_started" ? "—" : row.answered;
+        cell(tr, "score").textContent =
+          row.score === null || row.score === undefined
+            ? "—"
+            : row.score + " / " + (row.total || 0);
+        cell(tr, "events").innerHTML = row.events
+          ? '<span class="pill pill-removal">' + row.events + "</span>"
+          : '<span class="muted">—</span>';
+        cell(tr, "last_seen").textContent = row.last_seen || "—";
+
+        var actions = cell(tr, "actions");
+        if (row.attempt_id) {
+          actions.innerHTML =
+            '<a class="button button-small" href="' + url(attemptBase, row.attempt_id) + '">Open</a> ' +
+            '<form class="inline-form" method="post" action="' + url(reopenBase, row.attempt_id) + '">' +
+              '<input type="hidden" name="minutes" value="10">' +
+              '<button type="submit" class="button button-small" ' +
+              'title="Give this student 10 more minutes, keeping their answers">+10 min</button>' +
+            "</form> " +
+            '<form class="inline-form" method="post" action="' + url(resetBase, row.attempt_id) + '" ' +
+              'data-confirm="Clear this attempt so the student starts over? Their answers are lost.">' +
+              '<button type="submit" class="button button-small button-danger">Reset</button>' +
+            "</form>";
+        } else {
+          actions.innerHTML = '<span class="tiny muted">—</span>';
+        }
+      }
+
+      if (updated) {
+        var now = new Date();
+        updated.textContent = "updated " + now.getHours() + ":" +
+          pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+      }
+
+      // If the time has run out, tell the server so the exam closes for
+      // everyone even when nobody has this page open.
+      if (!data.open && remaining <= 0) {
+        var close = new XMLHttpRequest();
+        close.open("POST", expireUrl, true);
+        close.send();
+      }
+    };
+    request.send();
+  }
+
+  function cell(tr, name) { return tr.querySelector('[data-cell="' + name + '"]'); }
+
+  function setText(selector, value) {
+    var node = document.querySelector(selector);
+    if (node) node.textContent = (value === undefined || value === null) ? "—" : value;
+  }
+
+  function tick() {
+    if (!isOpen) return;
+    remaining -= 1;
+    if (timer) timer.textContent = format(remaining);
+    if (remaining <= 0) refresh();
+  }
+
+  refresh();
+  setInterval(refresh, 7000);
+  setInterval(tick, 1000);
+})();
+</script>
+{% endblock %}

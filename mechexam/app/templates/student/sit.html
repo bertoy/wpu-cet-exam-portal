@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% set hide_sidebar = true %}
+{% block title %}{{ exam.title }}{% endblock %}
+{% block body_class %}exam-running{% endblock %}
+
+{% block content %}
+<div data-exam-runtime
+     data-attempt-id="{{ attempt.id }}"
+     data-autosave-url="{{ url_for('taking.autosave', attempt_id=attempt.id) }}"
+     data-event-url="{{ url_for('taking.event', attempt_id=attempt.id) }}"
+     data-status-url="{{ url_for('taking.status', attempt_id=attempt.id) }}"
+     data-expire-url="{{ url_for('api.expire_check', exam_id=exam.id) }}"
+     data-exit-mode="{{ exam.exit_mode }}"
+     data-grace-seconds="{{ exam.exit_grace_seconds }}"
+     data-autosave-seconds="{{ autosave_seconds }}"
+     data-block-paste="{{ '1' if exam.block_paste else '0' }}"
+     data-one-per-page="{{ '1' if exam.one_question_per_page else '0' }}"
+     data-allow-backtrack="{{ '1' if exam.allow_backtrack else '0' }}"
+     data-seconds-remaining="{{ seconds_remaining }}"></div>
+
+<div class="exam-bar">
+  <div class="grow">
+    <div class="exam-title">{{ exam.title }}</div>
+    <div class="exam-meta">
+      {{ exam.course.code }} &middot;
+      <span data-answered-count>0</span> of {{ questions|length }} answered &middot;
+      {{ exam.total_points|num }} points
+    </div>
+  </div>
+
+  <div class="exam-progress" data-exam-progress><span style="width:0"></span></div>
+
+  <div class="save-state" data-save-state>
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">Saved</span>
+  </div>
+
+  <div class="timer" data-timer>
+    <span class="clock">{{ seconds_remaining|mmss }}</span>
+    <span class="label">left</span>
+  </div>
+
+  <button type="button" class="button button-small button-gold" data-submit-exam>
+    Submit
+  </button>
+</div>
+
+<p class="visually-hidden" data-exam-announce role="status" aria-live="assertive"></p>
+
+{% if exam.instructions %}
+<div class="callout callout-info mt2">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0" data-math data-math-source="{{ exam.instructions }}">{{ exam.instructions }}</p>
+  </div>
+</div>
+{% endif %}
+
+{% if exam.exit_mode == 'strict' %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      Stay on this page. Switching to another app or tab submits your exam at
+      once. Your screen going dark by itself is fine — that is recognised and
+      allowed.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if questions|length > 1 and (exam.allow_backtrack or exam.one_question_per_page) %}
+<div class="question-nav">
+  {% for question in questions %}
+    <a href="#question-{{ loop.index }}" data-nav-index="{{ loop.index }}">{{ loop.index }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('taking.submit', attempt_id=attempt.id) }}"
+      data-exam-form autocomplete="off">
+  <input type="hidden" name="auto" value="">
+  <input type="hidden" name="reason" value="manual">
+
+  {% for question in questions %}
+  {% set layout = layouts.get(question.id, {}) %}
+  <div class="question" id="question-{{ loop.index }}"
+       data-question-card data-question-index="{{ loop.index }}">
+    <div class="question-head">
+      <span class="question-number">{{ loop.index }}</span>
+      <span class="pill">{{ question.type_label }}</span>
+      <span class="question-points">
+        {{ question.effective_points|num }} point{{ '' if question.effective_points == 1 else 's' }}
+      </span>
+    </div>
+
+    <div class="question-body">
+      <div class="question-text" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+      {% if question.figure_path %}
+      <figure class="question-figure">
+        <img src="{{ url_for('exams.figure', name=question.figure_path) }}"
+             alt="{{ question.figure_caption or 'Figure for this question' }}">
+        {% if question.figure_caption %}<figcaption>{{ question.figure_caption }}</figcaption>{% endif %}
+      </figure>
+      {% endif %}
+
+      {# ------------------------------------------------- multiple choice #}
+      {% if question.qtype == 'mcq' %}
+        {% set saved_value = saved.get('q%d'|format(question.id), '') %}
+        {% for option in layout.get('options', question.options) %}
+        <label class="option {{ 'chosen' if option == saved_value }}">
+          <input type="radio" name="q{{ question.id }}" value="{{ option }}"
+                 {{ 'checked' if option == saved_value }}>
+          <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+          <span data-math data-math-source="{{ option }}">{{ option }}</span>
+        </label>
+        {% endfor %}
+
+      {# -------------------------------------------------- true or false #}
+      {% elif question.qtype == 'truefalse' %}
+        {% set saved_value = saved.get('q%d'|format(question.id), '') %}
+        {% for option in ['True', 'False'] %}
+        <label class="option {{ 'chosen' if option == saved_value }}">
+          <input type="radio" name="q{{ question.id }}" value="{{ option }}"
+                 {{ 'checked' if option == saved_value }}>
+          <span class="option-letter">{{ 'TF'[loop.index0] }}</span>
+          <span>{{ option }}</span>
+        </label>
+        {% endfor %}
+
+      {# ------------------------------------------------------- numerical #}
+      {% elif question.qtype == 'numeric' %}
+        <div class="numeric-answer">
+          <input type="text" inputmode="decimal" name="q{{ question.id }}"
+                 class="mono" value="{{ saved.get('q%d'|format(question.id), '') }}"
+                 placeholder="Your answer"
+                 aria-label="Numerical answer for question {{ loop.index }}">
+          {% if question.unit %}<span class="unit">{{ question.unit }}</span>{% endif %}
+        </div>
+        {% if question.tolerance_percent %}
+        <p class="field-hint">
+          Answers within {{ question.tolerance_percent|num }}% are accepted, so
+          rounding part-way through will not cost you the mark.
+        </p>
+        {% endif %}
+
+      {# ---------------------------------------------------- short answer #}
+      {% elif question.qtype == 'short' %}
+        <input type="text" name="q{{ question.id }}"
+               value="{{ saved.get('q%d'|format(question.id), '') }}"
+               placeholder="Your answer" style="max-width:28rem"
+               aria-label="Answer for question {{ loop.index }}">
+
+      {# --------------------------------------------------- matching type #}
+      {% elif question.qtype == 'matching' %}
+        {% set saved_value = saved.get('q%d'|format(question.id), '') %}
+        {% set picks = {} %}
+        {% for line in saved_value.splitlines() %}
+          {% if '=' in line %}
+            {% set bits = line.split('=', 1) %}
+            {% set _ = picks.update({bits[0].strip(): bits[1].strip()}) %}
+          {% endif %}
+        {% endfor %}
+
+        <div class="matching-bank">
+          <strong>Choose from:</strong>
+          <ol type="A">
+            {% for item in layout.get('right', []) %}
+              <li>{{ item.text }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+
+        <div class="matching-grid">
+          {% for item in layout.get('left', []) %}
+          <div class="matching-row">
+            <div>{{ item.text }}</div>
+            <select name="match_{{ question.id }}_{{ item.index }}"
+                    aria-label="Match for {{ item.text }}">
+              <option value="">— choose —</option>
+              {% for option in layout.get('right', []) %}
+                <option value="{{ option.index }}"
+                        {{ 'selected' if picks.get(item.index|string) == option.index|string }}>
+                  {{ 'ABCDEFGHIJKLMNOPQRST'[loop.index0] }} — {{ option.text|truncate(44) }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="field-hint">
+          {{ question.points|num }} point(s) for each correct match.
+        </p>
+
+      {# ---------------------------------------------------------- essay #}
+      {% elif question.qtype == 'essay' %}
+        <textarea name="q{{ question.id }}" rows="9"
+                  placeholder="Write your answer here."
+                  aria-label="Answer for question {{ loop.index }}">{{ saved.get('q%d'|format(question.id), '') }}</textarea>
+        {% if question.rubric %}
+        <p class="field-hint">
+          Marked against “{{ question.rubric.name }}”:
+          {{ question.rubric.criteria|map(attribute='title')|join('; ') }}.
+        </p>
+        {% endif %}
+
+      {# -------------------------------------- multi-part problem solving #}
+      {% elif question.qtype == 'multipart' %}
+        {% for part in question.parts %}
+        <div class="subpart">
+          <div>
+            <span class="subpart-label">{{ part.label }})</span>
+            <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
+            <span class="subpart-points">
+              — {{ part.points|num }} point{{ '' if part.points == 1 else 's' }}
+            </span>
+          </div>
+          <div class="numeric-answer mt1">
+            <input type="text"
+                   {% if part.answer_type in ('numeric', 'num') %}inputmode="decimal" class="mono"{% endif %}
+                   name="q{{ question.id }}_s{{ part.id }}"
+                   value="{{ saved.get('q%d_s%d'|format(question.id, part.id), '') }}"
+                   placeholder="Answer for ({{ part.label }})"
+                   aria-label="Answer for part {{ part.label }}">
+            {% if part.unit %}<span class="unit">{{ part.unit }}</span>{% endif %}
+          </div>
+          {% if part.tolerance_percent %}
+          <p class="field-hint mb0">Within {{ part.tolerance_percent|num }}% is accepted.</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <div class="card-body">
+      <div class="flex-between">
+        <div class="grow">
+          <p class="mb0">
+            <strong><span data-answered-count>0</span> of {{ questions|length }}</strong>
+            questions answered. Unanswered questions score nothing.
+          </p>
+          <p class="tiny muted mb0">
+            Your answers are saved as you work, so submitting is only needed
+            when you have finished.
+          </p>
+        </div>
+        <button type="button" class="button button-primary button-large" data-submit-exam>
+          Submit my answers
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+
+{# ------------------------------------------------------------------- tools #}
+{% if exam.allow_calculator %}
+<div class="exam-tools">
+  <button type="button" class="icon-button" data-calculator-toggle
+          title="Calculator" aria-label="Calculator">&#8862;</button>
+  <button type="button" class="icon-button" data-scratchpad-toggle
+          title="Scratch pad" aria-label="Scratch pad">&#9998;</button>
+</div>
+
+<div class="calculator" data-calculator>
+  <div class="calculator-head">
+    Calculator
+    <button type="button" class="button button-small" data-calc-close>Close</button>
+  </div>
+  <div class="calculator-screen" data-calc-screen>0</div>
+  <div class="calculator-keys">
+    <button type="button" data-calc-key="C">C</button>
+    <button type="button" data-calc-key="DEL">&#9003;</button>
+    <button type="button" class="op" data-calc-key="(">(</button>
+    <button type="button" class="op" data-calc-key=")">)</button>
+
+    <button type="button" data-calc-key="7">7</button>
+    <button type="button" data-calc-key="8">8</button>
+    <button type="button" data-calc-key="9">9</button>
+    <button type="button" class="op" data-calc-key="/">&divide;</button>
+
+    <button type="button" data-calc-key="4">4</button>
+    <button type="button" data-calc-key="5">5</button>
+    <button type="button" data-calc-key="6">6</button>
+    <button type="button" class="op" data-calc-key="*">&times;</button>
+
+    <button type="button" data-calc-key="1">1</button>
+    <button type="button" data-calc-key="2">2</button>
+    <button type="button" data-calc-key="3">3</button>
+    <button type="button" class="op" data-calc-key="-">&minus;</button>
+
+    <button type="button" data-calc-key="0">0</button>
+    <button type="button" data-calc-key=".">.</button>
+    <button type="button" class="op" data-calc-key="^">x&#8319;</button>
+    <button type="button" class="op" data-calc-key="+">+</button>
+
+    <button type="button" class="op" data-calc-key="e">e</button>
+    <button type="button" class="op" data-calc-key="%">%</button>
+    <button type="button" class="eq" data-calc-key="=" style="grid-column:span 2">=</button>
+  </div>
+</div>
+
+<div class="scratchpad" data-scratchpad>
+  <div class="calculator-head">
+    Scratch pad
+    <button type="button" class="button button-small" data-scratch-close>Close</button>
+  </div>
+  <textarea rows="8" placeholder="Working out — this is not submitted."></textarea>
+</div>
+{% endif %}
+
+<div class="exam-overlay" data-exam-overlay>
+  <div class="panel">
+    <h2 data-overlay-title>Return to the exam</h2>
+    <div class="countdown" data-overlay-countdown>0</div>
+    <p data-overlay-body>You left the exam.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('js/exam.js') }}" defer></script>
+{% endblock %}

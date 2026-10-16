@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Class list · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('courses.index') }}">My subjects</a><span>/</span>
+  <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Class list
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Class list — {{ course.code }}</h1>
+    <p class="page-sub">{{ course.title }} &middot; {{ course.term_label }}</p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('reports.class_list_print', course_id=course.id, section=section_id) }}">
+      Print
+    </a>
+    <a class="button" href="{{ url_for('courses.term_students') }}">Term students roll</a>
+  </div>
+</div>
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('courses.class_list', course_id=course.id) }}">All sections</a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('courses.class_list', course_id=course.id, section=section.id) }}">
+      {{ section.name }} <span class="tiny">({{ section.headcount }})</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">{{ students|length }} student{{ '' if students|length == 1 else 's' }}</h2>
+    <div style="max-width:16rem">
+      <input type="search" data-filter-target="#roster tbody tr" placeholder="Find a student">
+    </div>
+  </div>
+  <div class="card-body flush">
+    {% if students %}
+    <div class="table-wrap">
+      <table class="data" id="roster">
+        <thead>
+          <tr>
+            <th style="width:2.5rem">#</th><th>Student number</th><th>Name</th>
+            <th>Section</th><th>Programme</th><th>Year</th><th>Contact</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student in students %}
+          {% set enrolment = enrolments.get(student.id) %}
+          <tr data-search="{{ student.name }} {{ student.student_number or '' }}">
+            <td class="small muted">{{ loop.index }}</td>
+            <td class="mono small">{{ student.student_number or '—' }}</td>
+            <td><strong>{{ student.name }}</strong></td>
+            <td class="small">
+              {{ enrolment.section.name if enrolment and enrolment.section else '—' }}
+            </td>
+            <td class="small">{{ student.program or '—' }}</td>
+            <td class="small">{{ student.year_level or '—' }}</td>
+            <td class="small">{{ student.contact or '—' }}</td>
+            <td class="right nowrap">
+              <a class="button button-small"
+                 href="{{ url_for('gradebook.student_detail', course_id=course.id, student_id=student.id) }}">Grades</a>
+              {% if enrolment %}
+              <form class="inline-form" method="post"
+                    action="{{ url_for('courses.enrolment_change', course_id=course.id, enrollment_id=enrolment.id) }}"
+                    data-confirm="Mark {{ student.name }} as dropped in {{ course.code }}? Their marks are kept.">
+                <input type="hidden" name="action" value="drop">
+                <button type="submit" class="button button-small">Drop</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9823;</span>
+      <p>Nobody is enrolled in this {{ 'section' if section_id else 'subject' }} yet.</p>
+      <a class="button button-primary" href="{{ url_for('courses.enrol', course_id=course.id, section=section_id) }}">
+        Enrol students
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

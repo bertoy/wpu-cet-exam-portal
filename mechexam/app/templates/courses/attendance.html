@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Attendance · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('courses.index') }}">My subjects</a><span>/</span>
+  <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Attendance
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Attendance — {{ course.code }}</h1>
+    <p class="page-sub">
+      {{ sessions|length }} meeting{{ '' if sessions|length == 1 else 's' }} recorded.
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('reports.attendance_print', course_id=course.id, section=section_id) }}">
+      Print
+    </a>
+  </div>
+</div>
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('courses.attendance', course_id=course.id) }}">All sections</a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('courses.attendance', course_id=course.id, section=section.id) }}">
+      {{ section.name }}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Record a meeting</h2></div>
+  <div class="card-body">
+    {% if students %}
+    <form method="post">
+      <div class="field-row">
+        <div class="field">
+          <label for="meeting_date">Date</label>
+          <input type="date" id="meeting_date" name="meeting_date" value="{{ today }}" required>
+        </div>
+        {% if sections %}
+        <div class="field">
+          <label for="post_section">Section</label>
+          <select id="post_section" name="section_id">
+            <option value="">All sections</option>
+            {% for section in sections %}
+              <option value="{{ section.id }}" {{ 'selected' if section_id == section.id }}>{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="field" style="flex:2 1 20rem">
+          <label for="topic">Topic covered</label>
+          <input type="text" id="topic" name="topic" placeholder="First law applied to closed systems">
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead>
+            <tr><th>Student</th><th>Mark as</th><th>Note</th></tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+            <tr>
+              <td>
+                <strong>{{ student.name }}</strong>
+                <div class="tiny muted mono">{{ student.student_number or '' }}</div>
+              </td>
+              <td>
+                <div class="flex" style="gap:0.25rem">
+                  {% for value, label in statuses %}
+                  <label class="check" style="margin:0">
+                    <input type="radio" name="status_{{ student.id }}" value="{{ value }}"
+                           {{ 'checked' if value == 'present' }}>
+                    <span class="small">{{ label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+              </td>
+              <td><input type="text" name="note_{{ student.id }}" placeholder="Optional"></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="button-row mt1">
+        <button type="submit" class="button button-primary">Save attendance</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="empty">
+      <p>No students in this {{ 'section' if section_id else 'subject' }} yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if sessions and students %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Record so far</h2>
+    <span class="small muted">P present · L late · E excused · A absent</span>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead>
+          <tr>
+            <th class="sticky-name">Student</th>
+            {% for session in sessions %}
+              <th class="mid tiny" title="{{ session.topic or '' }}">
+                {{ session.meeting_date.strftime('%d/%m') }}
+              </th>
+            {% endfor %}
+            <th class="num">Present</th><th class="num">Absent</th><th class="num">Rate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student in students %}
+          {% set marks = matrix.get(student.id, {}) %}
+          {% set totals = summary.get(student.id) %}
+          <tr>
+            <td class="sticky-name">
+              {{ student.name }}
+              <div class="tiny muted mono">{{ student.student_number or '' }}</div>
+            </td>
+            {% for session in sessions %}
+              {% set mark = marks.get(session.id) %}
+              <td class="mid tiny">
+                {% if mark == 'present' %}<span style="color:var(--green-600)">P</span>
+                {% elif mark == 'late' %}<span style="color:var(--amber-600)">L</span>
+                {% elif mark == 'excused' %}<span style="color:var(--navy-600)">E</span>
+                {% elif mark == 'absent' %}<span style="color:var(--red-600)">A</span>
+                {% else %}<span class="muted">·</span>{% endif %}
+              </td>
+            {% endfor %}
+            <td class="num">{{ totals.present if totals else 0 }}</td>
+            <td class="num">{{ totals.absent if totals else 0 }}</td>
+            <td class="num">
+              {% if totals and totals.rate is not none %}
+                <span class="{{ 'grade-fail' if totals.rate < 80 else '' }}">{{ totals.rate }}%</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb1">
+      A rate under 80% is shown in red — the usual threshold for being dropped
+      for absences. Counting late and excused meetings as present is
+      deliberate; change a mark by recording that meeting again.
+    </p>
+    <div class="flex">
+      {% for session in sessions[:8] %}
+      <form class="inline-form" method="post"
+            action="{{ url_for('courses.attendance_delete', course_id=course.id, session_id=session.id) }}"
+            data-confirm="Delete the attendance record for {{ session.meeting_date.strftime('%d %b %Y') }}?">
+        <button type="submit" class="button button-small">
+          Delete {{ session.meeting_date.strftime('%d/%m') }}
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

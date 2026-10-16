@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Accounts · {{ app_name }}{% endblock %}
+{% block container_class %}container-wide{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Accounts
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Accounts</h1>
+    <p class="page-sub">{{ listing.total }} account{{ '' if listing.total == 1 else 's' }}
+      {%- if role %} with the role “{{ role }}”{% endif %}.</p>
+  </div>
+  <div class="button-row">
+    <a class="button button-primary" href="{{ url_for('admin.user_new') }}">Add an account</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body tight">
+    <form method="get" class="flex">
+      <div class="grow" style="max-width:22rem">
+        <input type="search" name="q" value="{{ search }}"
+               placeholder="Search by name, username or student number">
+      </div>
+      <div>
+        <select name="role" onchange="this.form.submit()">
+          <option value="">Every role</option>
+          {% for option in roles %}
+            <option value="{{ option }}" {{ 'selected' if option == role }}>{{ option|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="button">Search</button>
+      {% if search or role %}
+        <a class="button button-quiet" href="{{ url_for('admin.users') }}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if listing.items %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Name</th><th>Username</th><th>Student no.</th>
+            <th>Role</th><th>Programme</th><th class="mid">Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in listing.items %}
+          <tr class="{{ 'row-muted' if not user.is_enabled }}">
+            <td>
+              <a href="{{ url_for('admin.user_edit', user_id=user.id) }}">
+                <strong>{{ user.name }}</strong></a>
+              {% if user.must_change_password %}
+                <span class="pill pill-gold" title="Must set a new password at next sign-in">new password due</span>
+              {% endif %}
+            </td>
+            <td class="mono small">{{ user.username }}</td>
+            <td class="mono small">{{ user.student_number or '—' }}</td>
+            <td><span class="pill {{ 'pill-info' if user.role != 'student' }}">{{ user.role }}</span></td>
+            <td class="small">{{ user.program or '—' }}{% if user.year_level %} · {{ user.year_level }}{% endif %}</td>
+            <td class="mid">
+              {% if user.is_enabled %}<span class="pill pill-pass">active</span>
+              {% else %}<span class="pill pill-fail">disabled</span>{% endif %}
+            </td>
+            <td class="right nowrap">
+              <a class="button button-small" href="{{ url_for('admin.user_edit', user_id=user.id) }}">Edit</a>
+              <form class="inline-form" method="post"
+                    action="{{ url_for('admin.user_toggle', user_id=user.id) }}"
+                    data-confirm="{{ 'Disable' if user.is_enabled else 'Enable' }} {{ user.name }}?">
+                <button type="submit" class="button button-small">
+                  {{ 'Disable' if user.is_enabled else 'Enable' }}
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9823;</span>
+      <p>No account matches that search.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if listing.pages > 1 %}
+  <div class="card-foot flex">
+    <span class="grow small muted">Page {{ listing.page }} of {{ listing.pages }}</span>
+    <div class="button-row">
+      {% if listing.has_prev %}
+        <a class="button button-small"
+           href="{{ url_for('admin.users', page=listing.prev_num, role=role, q=search) }}">Previous</a>
+      {% endif %}
+      {% if listing.has_next %}
+        <a class="button button-small"
+           href="{{ url_for('admin.users', page=listing.next_num, role=role, q=search) }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

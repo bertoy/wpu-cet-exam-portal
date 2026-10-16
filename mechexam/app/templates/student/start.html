@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Start — {{ exam.title }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ exam.title }}</h1>
+    <p class="page-sub">
+      {{ exam.course.code }} — {{ exam.course.title }} &middot; {{ exam.category }}
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Before you begin</h2></div>
+  <div class="card-body">
+    <dl class="kv mb2">
+      <dt>Questions</dt><dd>{{ exam.questions|length if not exam.bank_draw_count else exam.bank_draw_count }}</dd>
+      <dt>Total points</dt><dd>{{ exam.total_points|num }}</dd>
+      <dt>Length</dt><dd>{{ exam.duration_minutes }} minutes</dd>
+      <dt>Time left on the clock</dt>
+      <dd><strong>{{ exam.seconds_remaining|mmss }}</strong></dd>
+    </dl>
+
+    {% if exam.instructions %}
+    <h3>Instructions</h3>
+    <div class="callout callout-info">
+      <span class="glyph" aria-hidden="true">&#8505;</span>
+      <div class="grow">
+        <p class="mb0" data-math data-math-source="{{ exam.instructions }}">{{ exam.instructions }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <h3>How this exam is run</h3>
+    <ul class="small">
+      <li>
+        <strong>The clock is shared.</strong> It started when your instructor
+        opened the exam and runs for the whole class. When it reaches zero the
+        exam closes and your answers are submitted as they stand.
+      </li>
+      <li>
+        <strong>Your answers are saved as you type.</strong> If your phone dies
+        or the connection drops, sign in again and carry on — nothing is lost.
+      </li>
+      {% if exam.exit_mode == 'strict' %}
+      <li style="color:var(--red-600)">
+        <strong>Leaving the exam submits it immediately.</strong> Switching to
+        another app, opening another tab, or closing the browser ends your
+        exam. Your screen going dark on its own does <em>not</em> — that is
+        recognised and allowed, so you will not be penalised for it.
+      </li>
+      {% elif exam.exit_mode == 'grace' %}
+      <li style="color:var(--amber-600)">
+        <strong>If you leave the exam you have
+        {{ exam.exit_grace_seconds }} seconds to come back</strong> before it
+        is submitted for you. Your screen going dark on its own does not count.
+      </li>
+      {% else %}
+      <li>
+        Leaving the exam is recorded for your instructor to see, but nothing is
+        submitted automatically.
+      </li>
+      {% endif %}
+      {% if exam.block_paste %}<li>Pasting into an answer is blocked.</li>{% endif %}
+      {% if exam.allow_calculator %}<li>A calculator and a scratch pad are available on screen.</li>{% endif %}
+      {% if exam.shuffle_questions %}<li>The questions are in a different order for each student.</li>{% endif %}
+    </ul>
+
+    <form method="post">
+      <div class="field" style="max-width:16rem">
+        <label for="access_code">Exam PIN</label>
+        <input type="text" id="access_code" name="access_code" class="mono"
+               autocapitalize="characters" autocomplete="off" spellcheck="false"
+               required autofocus>
+        <p class="field-hint">Your instructor gives this out in class.</p>
+      </div>
+
+      <div class="button-row">
+        <button type="submit" class="button button-primary button-large">
+          Start the exam
+        </button>
+        <a class="button" href="{{ url_for('taking.available') }}">Not yet</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

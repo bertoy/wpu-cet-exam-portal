@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Question banks · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Question banks</h1>
+    <p class="page-sub">
+      A bank is a pool of questions you keep and reuse. Pull a set into any
+      exam, or let the exam draw a different random selection for every
+      student.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">My banks</h2></div>
+    <div class="card-body {{ 'flush' if banks }}">
+      {% if banks %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Name</th><th>Subject</th><th class="num">Questions</th><th></th></tr></thead>
+          <tbody>
+            {% for bank in banks %}
+            <tr>
+              <td>
+                <a href="{{ url_for('exams.bank_detail', bank_id=bank.id) }}">
+                  <strong>{{ bank.name }}</strong></a>
+                {% if bank.description %}<div class="tiny muted">{{ bank.description|truncate(60) }}</div>{% endif %}
+              </td>
+              <td class="small">{{ bank.course.code if bank.course else '—' }}</td>
+              <td class="num">{{ bank.question_count }}</td>
+              <td class="right">
+                <a class="button button-small" href="{{ url_for('exams.bank_detail', bank_id=bank.id) }}">Open</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9783;</span>
+        <p>No banks yet. Create one and the questions you write will be there
+          next term.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Create a bank</h2></div>
+    <div class="card-body">
+      {% if courses %}
+      <form method="post">
+        <div class="field">
+          <label for="course_id">Subject</label>
+          <select id="course_id" name="course_id" required>
+            {% for course in courses %}
+              <option value="{{ course.id }}">{{ course.code }} — {{ course.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required
+                 placeholder="Thermodynamics item pool">
+        </div>
+        <div class="field">
+          <label for="description">What is in it</label>
+          <textarea id="description" name="description" rows="2"
+                    placeholder="Items on the ideal gas law and the first law, tagged by topic."></textarea>
+        </div>
+        <button type="submit" class="button button-primary">Create the bank</button>
+      </form>
+      {% else %}
+      <p class="small muted mb0">
+        You need a subject assigned to you before you can create a bank.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h3>Why keep a bank</h3>
+    <p class="small mb0">
+      Questions written straight into an exam disappear with it when the term
+      rolls over. Questions kept in a bank can be tagged by topic and
+      difficulty, pulled into a quiz in a single step, and drawn at random so
+      that no two students in the room sit quite the same paper. Pulling from a
+      bank makes a copy, so editing a question inside an exam never alters the
+      bank.
+    </p>
+  </div>
+</div>
+{% endblock %}

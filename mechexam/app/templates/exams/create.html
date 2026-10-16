@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}New examination · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>New
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>New examination</h1>
+    <p class="page-sub">
+      Set it up here, add the questions next, then open it when the class is
+      in front of you.
+    </p>
+  </div>
+</div>
+
+<form method="post" data-warn-unsaved>
+  <div class="card">
+    <div class="card-head"><h2 class="grow">What and where</h2></div>
+    <div class="card-body">
+      <div class="field-row">
+        <div class="field">
+          <label for="course_id">Subject</label>
+          <select id="course_id" name="course_id" required
+                  data-load-into="#section_id"
+                  data-load-url="{{ url_for('exams.sections_json', course_id=0)|replace('/0/', '/__ID__/') }}"
+                  data-load-placeholder="All sections">
+            <option value="">— choose a subject —</option>
+            {% for course in courses %}
+              <option value="{{ course.id }}" {{ 'selected' if preselect == course.id }}>
+                {{ course.code }} — {{ course.title }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="field-hint">Only the subjects assigned to you are listed.</p>
+        </div>
+        <div class="field">
+          <label for="section_id">For which section</label>
+          <select id="section_id" name="section_id">
+            <option value="">All sections</option>
+          </select>
+          <p class="field-hint">Leave as all sections unless one group sits a different paper.</p>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field" style="flex:2 1 20rem">
+          <label for="title">Title</label>
+          <input type="text" id="title" name="title" required placeholder="Quiz 3 — Ideal Gases">
+        </div>
+        <div class="field">
+          <label for="category">Kind</label>
+          <select id="category" name="category">
+            {% for option in categories %}<option value="{{ option }}">{{ option }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="topic">Coverage</label>
+        <input type="text" id="topic" name="topic" placeholder="Ideal gas law, processes">
+      </div>
+
+      <div class="field">
+        <label for="instructions">Instructions the students will read</label>
+        <textarea id="instructions" name="instructions" rows="3" data-equation
+placeholder="Answer all items. Express pressures in kPa and round to two decimal places."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Time and access</h2></div>
+    <div class="card-body">
+      <div class="field-row">
+        <div class="field">
+          <label for="duration_minutes">Length (minutes)</label>
+          <input type="number" id="duration_minutes" name="duration_minutes"
+                 min="1" max="600" value="60" required>
+        </div>
+        <div class="field">
+          <label for="access_code">Exam PIN</label>
+          <input type="text" id="access_code" name="access_code" class="mono"
+                 placeholder="Leave blank and one is generated">
+          <p class="field-hint">Asked for once, when a student starts the exam.</p>
+        </div>
+        <div class="field">
+          <label for="link_item_id">Record the score under</label>
+          <select id="link_item_id" name="link_item_id">
+            <option value="">Do not copy into the gradebook</option>
+            {% for item in gradebook_items %}
+              <option value="{{ item.id }}">
+                {{ item.component.name }} — {{ item.title }} (out of {{ item.max_points|num }})
+              </option>
+            {% endfor %}
+          </select>
+          <p class="field-hint">
+            Scores are copied across as the exam is submitted, rescaled to that
+            activity's maximum. A mark you have overridden is never overwritten.
+          </p>
+        </div>
+      </div>
+
+      <div class="callout callout-info">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            The clock starts when <em>you</em> open the exam, not when each
+            student signs in, and it runs for the whole class at once. When the
+            time is up the exam closes for everybody and whatever is on screen
+            is submitted.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Conduct of the examination</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label for="exit_mode">If a student leaves the exam</label>
+        <select id="exit_mode" name="exit_mode">
+          {% for value, label in exit_modes %}
+            <option value="{{ value }}" {{ 'selected' if value == 'strict' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <p class="field-hint">
+          Switching to another app or another tab counts as leaving. A screen
+          that merely goes to sleep does not — that is recorded for you to see,
+          and never punished.
+        </p>
+      </div>
+
+      <div class="field" style="max-width:16rem">
+        <label for="exit_grace_seconds">Grace period (seconds)</label>
+        <input type="number" id="exit_grace_seconds" name="exit_grace_seconds"
+               min="10" max="900" value="180">
+        <p class="field-hint">Used only by the middle option above.</p>
+      </div>
+
+      <div class="field-row">
+        <div>
+          <label class="check">
+            <input type="checkbox" name="shuffle_questions" value="1" checked>
+            <span>Shuffle the questions for each student</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="shuffle_options" value="1" checked>
+            <span>Shuffle the choices too</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="block_paste" value="1" checked>
+            <span>Block pasting into answers</span>
+          </label>
+        </div>
+        <div>
+          <label class="check">
+            <input type="checkbox" name="allow_calculator" value="1" checked>
+            <span>Offer a calculator and scratch pad</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="allow_backtrack" value="1" checked>
+            <span>Let students go back to earlier questions</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="one_question_per_page" value="1">
+            <span>Show one question at a time</span>
+          </label>
+        </div>
+      </div>
+
+      <fieldset>
+        <legend>What the student sees afterwards</legend>
+        <label class="check">
+          <input type="checkbox" name="show_score" value="1" checked>
+          <span>Their score, as soon as they submit</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="show_answers" value="1">
+          <span>The correct answers and your explanations
+            <span class="check-note">Leave this off while other sections have yet to sit it.</span></span>
+        </label>
+      </fieldset>
+
+      <div class="field" style="max-width:20rem">
+        <label for="bank_draw_count">Give each student only this many questions</label>
+        <input type="number" id="bank_draw_count" name="bank_draw_count" min="0" value="0">
+        <p class="field-hint">
+          Zero means everyone gets every question. Set it to 20 with 40
+          questions loaded and each student sits a different draw of 20.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="button-row mb2">
+    <button type="submit" class="button button-primary button-large">
+      Create and add questions
+    </button>
+    <a class="button" href="{{ url_for('exams.index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

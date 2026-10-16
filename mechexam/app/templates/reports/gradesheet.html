@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Grade sheet · {{ course.code }}{% endblock %}
+{% block container_class %}container-wide{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+    Grade sheet
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>Grade sheet</h1>
+      <p class="page-sub">
+        Laid out for A4 landscape. Use your browser's print command — choose
+        landscape and “background graphics” for the shaded headings.
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('gradebook.export_csv', course_id=course.id, section=section_id) }}">
+        Export CSV
+      </a>
+      {% if show_components %}
+        <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
+          Hide the component columns
+        </a>
+      {% else %}
+        <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id, detail=1) }}">
+          Show the component columns
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if course.sections %}
+  <div class="section-tabs">
+    <a class="section-tab {{ 'active' if not section_id }}"
+       href="{{ url_for('reports.gradesheet', course_id=course.id, detail=1 if show_components else none) }}">
+      All sections
+    </a>
+    {% for section in sections %}
+      <a class="section-tab {{ 'active' if section_id == section.id }}"
+         href="{{ url_for('reports.gradesheet', course_id=course.id, section=section.id, detail=1 if show_components else none) }}">
+        {{ section.name }}
+      </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not course.is_finalised %}
+  <div class="callout callout-warning">
+    <span class="glyph" aria-hidden="true">&#9888;</span>
+    <div class="grow">
+      <p class="mb0">
+        This subject has not been finalised, so the grades below are computed
+        live and may still change.
+        <a href="{{ url_for('gradebook.finalise', course_id=course.id) }}">Finalise them</a>
+        before submitting this sheet.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="sheet">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="line">{{ campus_name }}</p>
+    <p class="title">Report of Grades</p>
+  </div>
+
+  <table style="width:100%;margin-bottom:0.6rem;font-size:0.85rem">
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Units:</strong> {{ course.units|num }}</td>
+      <td><strong>Semester:</strong> {{ course.semester }}</td>
+    </tr>
+    <tr>
+      <td><strong>Instructor:</strong> {{ course.owner.display_name if course.owner else '' }}</td>
+      <td><strong>Section:</strong> {{ section_label or 'All sections' }}</td>
+      <td><strong>School Year:</strong> {{ course.school_year }}</td>
+    </tr>
+  </table>
+
+  <table class="data">
+    <thead>
+      <tr>
+        <th style="width:2.5rem">No.</th>
+        <th>Student Number</th>
+        <th>Name of Student</th>
+        {% if course.sections %}<th>Section</th>{% endif %}
+        {% if show_components %}
+          {% for component in course.components if component.scope == 'lecture' %}
+            <th class="num">{{ component.name }}<br>{{ component.weight_percent|num }}%</th>
+          {% endfor %}
+          {% if course.has_laboratory %}
+            {% for component in course.components if component.scope == 'laboratory' %}
+              <th class="num">Lab {{ component.name }}<br>{{ component.weight_percent|num }}%</th>
+            {% endfor %}
+          {% endif %}
+        {% endif %}
+        <th class="num">Lecture<br>%</th>
+        {% if course.has_laboratory %}<th class="num">Laboratory<br>%</th>{% endif %}
+        <th class="num">Final<br>%</th>
+        {% if removal %}<th class="num">Removal<br>%</th>{% endif %}
+        <th class="mid">Grade</th>
+        <th class="mid">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for result in results %}
+      <tr>
+        <td class="mid">{{ loop.index }}</td>
+        <td class="mono">{{ result.student.student_number or '' }}</td>
+        <td>{{ result.student.name }}</td>
+        {% if course.sections %}<td>{{ enrolments.get(result.student.id, '') }}</td>{% endif %}
+
+        {% if show_components %}
+          {% for component in result.lecture.components %}
+            <td class="num">{{ component.raw_percent|pct }}</td>
+          {% endfor %}
+          {% if course.has_laboratory %}
+            {% if result.laboratory %}
+              {% for component in result.laboratory.components %}
+                <td class="num">{{ component.raw_percent|pct }}</td>
+              {% endfor %}
+            {% else %}
+              {% for component in course.components if component.scope == 'laboratory' %}
+                <td class="num">—</td>
+              {% endfor %}
+            {% endif %}
+          {% endif %}
+        {% endif %}
+
+        <td class="num">{{ result.lecture.percent|pct }}</td>
+        {% if course.has_laboratory %}
+          <td class="num">{{ result.laboratory.percent|pct if result.laboratory else '—' }}</td>
+        {% endif %}
+        <td class="num"><strong>{{ result.final_display }}</strong></td>
+        {% if removal %}
+          <td class="num">
+            {{ result.frozen.removal_percent|pct if result.frozen and result.frozen.removal_percent is not none else '—' }}
+          </td>
+        {% endif %}
+        <td class="mid"><strong>{{ result.effective_grade }}</strong></td>
+        <td class="mid">{{ result.effective_remark }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="tally">
+    <span>PASSED: {{ tally.passed }}</span>
+    <span>REMOVAL: {{ tally.removal }}</span>
+    <span>FAILED: {{ tally.failed }}</span>
+    {% if tally.incomplete %}<span>INCOMPLETE: {{ tally.incomplete }}</span>{% endif %}
+    <span>TOTAL: {{ tally.total }}</span>
+  </div>
+
+  <p style="font-size:0.78rem;margin-top:0.6rem">
+    <strong>Transmutation:</strong>
+    95.60 = 1.00 &middot; 91.15 = 1.25 &middot; 86.70 = 1.50 &middot;
+    82.25 = 1.75 &middot; 77.80 = 2.00 &middot; 73.35 = 2.25 &middot;
+    68.90 = 2.50 &middot; 64.45 = 2.75 &middot; 60.00 = 3.00 &middot;
+    below 60.00 = 5.00.
+    Grading: Written Works 20%, Performance Task 40%, Major Examinations 40%
+    for lecture{% if course.has_laboratory %};
+    20%, 60% and 20% for laboratory; final grade
+    {{ course.lecture_share|num }}% lecture and {{ course.laboratory_share|num }}% laboratory{% endif %}.
+    A standing of {{ course.removal_low|pct }}–{{ course.removal_high|pct }}%
+    qualifies for a removal examination.
+  </p>
+
+  <div class="signatures">
+    <div class="signature">
+      <div class="rule">{{ course.owner.display_name if course.owner else '' }}</div>
+      <div class="role">Instructor{% if course.owner and course.owner.rank %} — {{ course.owner.rank }}{% endif %}</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Program Chair, Mechanical Engineering</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Dean, {{ college_name }}</div>
+    </div>
+  </div>
+
+  <p style="font-size:0.72rem;margin-top:1rem;color:#555">
+    Printed {{ printed_on.strftime('%d %B %Y at %I:%M %p') }}
+    {%- if course.is_finalised %} &middot; finalised {{ course.finalised_at|dt }}
+    {%- else %} &middot; <strong>provisional — not yet finalised</strong>{% endif %}
+  </p>
+</div>
+{% endblock %}

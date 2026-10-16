@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }} · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.index') }}">Gradebook</a><span>/</span>
+  <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  {{ item.title }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ item.title }}</h1>
+    <p class="page-sub">
+      {{ component.name }} ({{ component.scope|title }}, {{ component.weight_percent|num }}%)
+      &middot; {{ item.type_label }}
+      &middot; out of {{ item.max_points|num }}
+      {%- if item.weight_multiplier != 1 %} &middot; counts {{ item.weight_multiplier|num }}×{% endif %}
+      {%- if item.date_given %} &middot; given {{ item.date_given|d }}{% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    {% if item.rubric_id %}
+      <a class="button button-primary" href="{{ url_for('rubrics.grade', item_id=item.id, section=section_id) }}">
+        Mark with the rubric
+      </a>
+    {% endif %}
+    {% if not item.is_published %}<span class="pill">hidden from students</span>{% endif %}
+  </div>
+</div>
+
+{% if stats %}
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Marks entered</div>
+    <div class="value">{{ stats.entered }}</div>
+    <div class="note">of {{ stats.of }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Mean</div>
+    <div class="value">{{ stats.mean|num }}</div>
+    <div class="note">{{ stats.mean_percent|pct }}%</div>
+  </div>
+  <div class="stat">
+    <div class="label">Highest / lowest</div>
+    <div class="value" style="font-size:1.3rem">{{ stats.high|num }} / {{ stats.low|num }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">At 60% or above</div>
+    <div class="value">{{ stats.passed }}</div>
+    <div class="note">of {{ stats.entered }} marked</div>
+  </div>
+</div>
+{% endif %}
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('gradebook.item', item_id=item.id) }}">All sections</a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('gradebook.item', item_id=item.id, section=section.id) }}">{{ section.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" data-warn-unsaved>
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">Enter the marks</h2>
+      <span class="small muted">
+        Leave a box empty to record nothing — it will not count as a zero.
+      </span>
+    </div>
+    <div class="card-body flush">
+      {% if students %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th style="width:2.5rem">#</th><th>Student</th>
+              <th class="num" style="width:7rem">Score</th>
+              <th class="num" style="width:5rem">%</th>
+              <th>Remarks</th><th class="mid">By hand</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in students %}
+            {% set row = scores.get(student.id) %}
+            <tr>
+              <td class="small muted">{{ loop.index }}</td>
+              <td>
+                {{ student.name }}
+                <div class="tiny muted mono">{{ student.student_number or '' }}</div>
+              </td>
+              <td class="num">
+                <input type="number" class="cell-input" name="score_{{ student.id }}"
+                       step="0.25" min="0" max="{{ item.max_points|num }}"
+                       value="{{ row.points|num if row and row.points is not none else '' }}"
+                       aria-label="Score for {{ student.name }}">
+              </td>
+              <td class="num small">
+                {% if row and row.points is not none and item.max_points %}
+                  {% set percent = (row.points / item.max_points * 100)|round(2) %}
+                  <span class="{{ 'grade-pass' if percent >= 60 else 'grade-fail' }}">{{ percent|pct }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <input type="text" name="remarks_{{ student.id }}"
+                       value="{{ row.remarks or '' if row else '' }}"
+                       placeholder="e.g. late submission"
+                       aria-label="Remarks for {{ student.name }}">
+              </td>
+              <td class="mid">
+                {% if row and row.is_override %}
+                  <label class="check" style="margin:0;justify-content:center">
+                    <input type="checkbox" name="keep_override_{{ student.id }}" value="1" checked>
+                    <span class="tiny" title="{{ row.override_note }}">locked</span>
+                  </label>
+                {% else %}
+                  <label class="check" style="margin:0;justify-content:center">
+                    <input type="checkbox" name="override_{{ student.id }}" value="1">
+                    <span class="tiny">lock</span>
+                  </label>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <p>No students in this {{ 'section' if section_id else 'subject' }}.</p>
+      </div>
+      {% endif %}
+    </div>
+    {% if students %}
+    <div class="card-foot flex">
+      <span class="grow small muted">
+        “Lock” marks a score as entered by hand, so re-synchronising an exam or
+        re-marking with the rubric will not overwrite it.
+      </span>
+      <button type="submit" class="button button-primary">Save the marks</button>
+    </div>
+    {% endif %}
+  </div>
+</form>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Paste marks in</h2></div>
+    <div class="card-body">
+      <p class="small">
+        Quicker than clicking through a long list. One student per line:
+        the student number (or the exact name), then the score.
+      </p>
+      <form method="post" action="{{ url_for('gradebook.item_import', item_id=item.id) }}"
+            enctype="multipart/form-data">
+        <div class="field">
+          <label for="pasted">Paste here</label>
+          <textarea id="pasted" name="pasted" rows="6" spellcheck="false"
+placeholder="2023-0001, 23
+2023-0002, 19.5"></textarea>
+        </div>
+        <div class="field">
+          <label for="csv_file">…or choose a CSV file</label>
+          <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv">
+        </div>
+        <button type="submit" class="button">Import the marks</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Activity settings</h2></div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('gradebook.item_settings', item_id=item.id) }}">
+        <div class="field">
+          <label for="title">Title</label>
+          <input type="text" id="title" name="title" value="{{ item.title }}">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="item_type">Kind</label>
+            <select id="item_type" name="item_type">
+              {% for value, label in item.TYPES %}
+                <option value="{{ value }}" {{ 'selected' if item.item_type == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="component_id">Goes under</label>
+            <select id="component_id" name="component_id">
+              {% for other in course.components %}
+                <option value="{{ other.id }}" {{ 'selected' if other.id == component.id }}>
+                  {{ other.scope|title }} — {{ other.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="max_points">Highest possible score</label>
+            <input type="number" id="max_points" name="max_points" step="0.5" min="0.5"
+                   value="{{ item.max_points|num }}">
+          </div>
+          <div class="field">
+            <label for="weight_multiplier">Counts as</label>
+            <input type="number" id="weight_multiplier" name="weight_multiplier"
+                   step="0.5" min="0" value="{{ item.weight_multiplier|num }}">
+          </div>
+          <div class="field">
+            <label for="date_given">Date given</label>
+            <input type="date" id="date_given" name="date_given"
+                   value="{{ item.date_given.isoformat() if item.date_given else '' }}">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="rubric_id">Rubric</label>
+          <select id="rubric_id" name="rubric_id">
+            <option value="">No rubric — enter a score directly</option>
+            {% for rubric in rubrics %}
+              <option value="{{ rubric.id }}" {{ 'selected' if item.rubric_id == rubric.id }}>
+                {{ rubric.name }}{% if rubric.is_template %} (template){% endif %}
+                — {{ rubric.criteria|length }} criteria, {{ rubric.total_points|num }} points
+              </option>
+            {% endfor %}
+          </select>
+          <p class="field-hint">
+            Attaching a rubric adds a marking page where each criterion is
+            scored and the total is worked out as you go.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="instructions">Instructions for the students</label>
+          <textarea id="instructions" name="instructions" rows="2">{{ item.instructions or '' }}</textarea>
+        </div>
+
+        <div class="field">
+          <label for="drive_folder_url">Google Drive folder for submissions</label>
+          <input type="url" id="drive_folder_url" name="drive_folder_url"
+                 value="{{ item.drive_folder_url or '' }}">
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="accepts_submission" value="1" {{ 'checked' if item.accepts_submission }}>
+          <span>Students upload a file for this activity</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="is_published" value="1" {{ 'checked' if item.is_published }}>
+          <span>Visible to students
+            <span class="check-note">Turn this off while you are still setting it up.</span></span>
+        </label>
+
+        {% if sections %}
+        <div class="field">
+          <label for="item_section">Only for section</label>
+          <select id="item_section" name="section_id">
+            <option value="">All sections</option>
+            {% for section in sections %}
+              <option value="{{ section.id }}" {{ 'selected' if item.section_id == section.id }}>{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="button-row">
+          <button type="submit" class="button button-primary">Save settings</button>
+        </div>
+      </form>
+
+      <hr>
+      <form method="post" action="{{ url_for('gradebook.item_settings', item_id=item.id) }}">
+        <input type="hidden" name="action" value="delete">
+        <div class="field">
+          <label for="confirm">Type DELETE to remove this activity and its marks</label>
+          <input type="text" id="confirm" name="confirm" class="mono" placeholder="DELETE">
+        </div>
+        <button type="submit" class="button button-danger">Delete this activity</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Attendance · {{ course.code }}{% endblock %}
+{% block container_class %}container-wide{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="page-head">
+    <div class="grow">
+      <h1>Attendance record for printing</h1>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('courses.attendance', course_id=course.id,
+                                         section=section.id if section else none) }}">Back</a>
+    </div>
+  </div>
+</div>
+
+<div class="sheet">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">Attendance Record</p>
+  </div>
+
+  <table style="width:100%;margin-bottom:0.6rem;font-size:0.85rem">
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Section:</strong> {{ section.name if section else 'All sections' }}</td>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+    </tr>
+  </table>
+
+  {% if sessions %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th style="width:2.2rem">No.</th>
+        <th>Name of Student</th>
+        {% for session in sessions %}
+          <th class="mid" style="width:1.8rem">{{ session.meeting_date.strftime('%d/%m') }}</th>
+        {% endfor %}
+        <th class="num">Present</th><th class="num">Absent</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for student in students %}
+      {% set marks = matrix.get(student.id, {}) %}
+      <tr>
+        <td class="mid">{{ loop.index }}</td>
+        <td>{{ student.name }}</td>
+        {% for session in sessions %}
+          {% set mark = marks.get(session.id) %}
+          <td class="mid">
+            {%- if mark == 'present' %}P
+            {%- elif mark == 'late' %}L
+            {%- elif mark == 'excused' %}E
+            {%- elif mark == 'absent' %}A
+            {%- else %}&nbsp;{% endif -%}
+          </td>
+        {% endfor %}
+        <td class="num">
+          {{ marks.values()|select('in', ['present', 'late', 'excused'])|list|length }}
+        </td>
+        <td class="num">
+          {{ marks.values()|select('equalto', 'absent')|list|length }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p style="font-size:0.8rem;margin-top:0.5rem">
+    <strong>Key:</strong> P present &middot; L late &middot; E excused &middot; A absent.
+    Meetings recorded: {{ sessions|length }}.
+  </p>
+  {% else %}
+  <p>No meetings have been recorded for this {{ 'section' if section else 'subject' }} yet.</p>
+  {% endif %}
+
+  <div class="signatures">
+    <div class="signature">
+      <div class="rule">{{ course.owner.display_name if course.owner else '' }}</div>
+      <div class="role">Instructor</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Program Chair</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Dean</div>
+    </div>
+  </div>
+
+  <p style="font-size:0.72rem;margin-top:1rem;color:#555">
+    Printed {{ printed_on.strftime('%d %B %Y at %I:%M %p') }}
+  </p>
+</div>
+{% endblock %}

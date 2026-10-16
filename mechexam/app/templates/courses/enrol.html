@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Enrol students · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('courses.index') }}">My subjects</a><span>/</span>
+  <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Enrol students
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Enrol students into {{ course.code }}</h1>
+    <p class="page-sub">
+      Only the students you tick are enrolled, and only into the section chosen
+      below.
+    </p>
+  </div>
+</div>
+
+{# The filter sits in its own form, outside the enrolment form — nesting forms
+   is invalid HTML and the inner one simply would not submit. #}
+<div class="card">
+  <div class="card-body tight">
+    <form method="get" class="flex">
+      <div>
+        <label for="program" class="visually-hidden">Programme</label>
+        <select id="program" name="program" onchange="this.form.submit()">
+          <option value="">Every programme</option>
+          {% for option in programs %}
+            <option value="{{ option }}" {{ 'selected' if option == program }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="year_level" class="visually-hidden">Year level</label>
+        <select id="year_level" name="year_level" onchange="this.form.submit()">
+          <option value="">Every year level</option>
+          {% for option in year_levels %}
+            <option value="{{ option }}" {{ 'selected' if option == year_level }}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="grow" style="max-width:18rem">
+        <label for="q" class="visually-hidden">Search</label>
+        <input type="search" id="q" name="q" value="{{ search }}"
+               placeholder="Search the whole student list">
+      </div>
+      {% if preselect_section %}
+        <input type="hidden" name="section" value="{{ preselect_section }}">
+      {% endif %}
+      <button type="submit" class="button">Search</button>
+      {% if program or year_level or search %}
+        <a class="button button-quiet"
+           href="{{ url_for('courses.enrol', course_id=course.id, section=preselect_section) }}">
+          Clear
+        </a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<form method="post">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Where they go</h2></div>
+    <div class="card-body">
+      {% if sections %}
+      <div class="field" style="max-width:24rem">
+        <label for="section_id">Section <span style="color:var(--red-600)">*</span></label>
+        <select id="section_id" name="section_id" required>
+          <option value="">— choose the section —</option>
+          {% for section in sections %}
+            <option value="{{ section.id }}"
+                    {{ 'selected' if preselect_section == section.id }}>
+              {{ section.name }}{% if section.schedule %} — {{ section.schedule }}{% endif %}
+              ({{ section.headcount }} enrolled)
+            </option>
+          {% endfor %}
+        </select>
+        <p class="field-hint">
+          Students already enrolled in another section of this subject are
+          moved into the one you choose.
+        </p>
+      </div>
+      {% else %}
+      <p class="small muted mb0">
+        This subject has no sections, so students are enrolled into the subject
+        itself. You can
+        <a href="{{ url_for('courses.detail', course_id=course.id) }}">add sections</a>
+        later and move people into them.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">Choose the students</h2>
+      <span class="pill pill-info"><span data-checked-count>0</span> ticked</span>
+    </div>
+
+    <div class="card-body tight">
+      <div class="flex">
+        <div class="grow" style="max-width:20rem">
+          <input type="search" data-filter-target="#candidates tbody tr"
+                 data-filter-count="#shown-count"
+                 placeholder="Narrow this list by name or number">
+        </div>
+        <span class="small muted">
+          showing <strong id="shown-count">{{ candidates|length }}</strong>
+          of {{ candidates|length }}
+        </span>
+      </div>
+    </div>
+
+    <div class="card-body flush">
+      {% if candidates %}
+      <div class="table-wrap scroll-y">
+        <table class="data" id="candidates">
+          <thead>
+            <tr>
+              <th class="mid" style="width:2.5rem">
+                <input type="checkbox" data-check-all="#candidates input[name='student_ids']"
+                       aria-label="Tick every student shown">
+              </th>
+              <th>Student number</th><th>Name</th><th>Programme</th><th>Year</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in candidates %}
+            <tr data-search="{{ student.name }} {{ student.student_number or '' }} {{ student.program or '' }}">
+              <td class="mid">
+                <input type="checkbox" name="student_ids" value="{{ student.id }}"
+                       aria-label="Enrol {{ student.name }}">
+              </td>
+              <td class="mono small">{{ student.student_number or '—' }}</td>
+              <td>{{ student.name }}</td>
+              <td class="small">{{ student.program or '—' }}</td>
+              <td class="small">{{ student.year_level or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9823;</span>
+        <p>
+          Every student matching these filters is already enrolled, or has been
+          marked shifted, transferred or stopped for {{ course.school_year }}.
+        </p>
+        <p class="tiny">
+          Students who do not have an account yet can be created in bulk from
+          the subject page, by pasting the class list.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if candidates %}
+    <div class="card-foot flex">
+      <span class="grow small muted">
+        Ticking the box in the header selects only the rows currently shown, so
+        narrowing the list first and then ticking all is safe.
+      </span>
+      <div class="button-row">
+        <a class="button" href="{{ url_for('courses.detail', course_id=course.id) }}">Cancel</a>
+        <button type="submit" class="button button-primary">Enrol the ticked students</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

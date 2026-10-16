@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Take an exam · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Take an exam</h1>
+    <p class="page-sub">
+      Exams open now, grouped by subject. Your instructor starts the clock, so
+      the time shown is the same for everybody in the class.
+    </p>
+  </div>
+</div>
+
+{% if groups %}
+  {% for group in groups %}
+  <div class="card">
+    <div class="card-head">
+      <div class="grow">
+        <h2 style="margin-bottom:0.1rem">{{ group.course.code }}</h2>
+        <p class="page-sub mb0">{{ group.course.title }}</p>
+      </div>
+      <span class="pill pill-info">{{ group.entries|length }} open</span>
+    </div>
+    <div class="card-body">
+      <div class="stack">
+        {% for entry in group.entries %}
+        <div class="flex-between" style="border:1px solid var(--line);border-radius:var(--radius);padding:0.85rem">
+          <div class="grow">
+            <strong>{{ entry.exam.title }}</strong>
+            {% if entry.attempt %}<span class="pill pill-open">in progress</span>{% endif %}
+            <div class="small muted">
+              {{ entry.exam.category }}
+              {%- if entry.exam.topic %} &middot; {{ entry.exam.topic }}{% endif %}
+              &middot; {{ entry.exam.duration_minutes }} minutes
+              &middot; {{ entry.exam.questions|length }} question{{ '' if entry.exam.questions|length == 1 else 's' }}
+              &middot; {{ entry.exam.total_points|num }} points
+            </div>
+            <div class="tiny" style="color:var(--amber-600)">
+              Closes in {{ entry.exam.seconds_remaining|mmss }}
+            </div>
+            {% if entry.exam.exit_mode == 'strict' %}
+            <div class="tiny" style="color:var(--red-600)">
+              Leaving this exam — switching apps or tabs — submits it at once.
+            </div>
+            {% endif %}
+          </div>
+          <a class="button {{ 'button-gold' if not entry.attempt else 'button-primary' }}"
+             href="{{ url_for('taking.start', exam_id=entry.exam.id) }}">
+            {{ 'Carry on' if entry.attempt else 'Start' }}
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9998;</span>
+      <h2>Nothing open just now</h2>
+      <p>
+        An exam appears here the moment your instructor opens it. You will need
+        the exam PIN they give you in class.
+      </p>
+      <a class="button" href="{{ url_for('student.progress') }}">See my progress</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if history %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Exams you have taken</h2>
+    <a class="button button-small" href="{{ url_for('student.history') }}">Full history</a>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead><tr><th>Exam</th><th>Subject</th><th class="num">Score</th><th>Submitted</th><th></th></tr></thead>
+        <tbody>
+          {% for attempt in history %}
+          <tr>
+            <td>{{ attempt.exam.title }}</td>
+            <td class="small">{{ attempt.exam.course.code }}</td>
+            <td class="num">
+              {% if attempt.exam.show_score %}
+                {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+              {% else %}<span class="muted">not released</span>{% endif %}
+            </td>
+            <td class="small nowrap">{{ attempt.submitted_at|dt('%d %b, %I:%M %p') }}</td>
+            <td class="right">
+              <a class="button button-small"
+                 href="{{ url_for('taking.review', attempt_id=attempt.id) }}">Review</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Gradebook · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Gradebook</h1>
+    <p class="page-sub">{{ semester }}, {{ school_year }}</p>
+  </div>
+</div>
+
+{% if courses %}
+<div class="card">
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Code</th><th>Subject</th><th class="mid">Laboratory</th>
+            <th class="mid">State</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for course in courses %}
+          <tr>
+            <td><a href="{{ url_for('gradebook.course', course_id=course.id) }}">
+              <strong>{{ course.code }}</strong></a></td>
+            <td class="small">{{ course.title }}</td>
+            <td class="mid">{{ 'Yes' if course.has_laboratory else '—' }}</td>
+            <td class="mid">
+              {% if course.is_finalised %}<span class="pill pill-info">finalised</span>
+              {% else %}<span class="pill">in progress</span>{% endif %}
+            </td>
+            <td class="right nowrap">
+              <a class="button button-small" href="{{ url_for('gradebook.course', course_id=course.id) }}">Open</a>
+              <a class="button button-small" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">Grade sheet</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h3>How a grade is worked out here</h3>
+    <div class="grid grid-2">
+      <div>
+        <h4>Lecture</h4>
+        <table class="data table-compact">
+          <tbody>
+            <tr><td>Written Works</td><td class="num">20%</td></tr>
+            <tr><td>Performance Task</td><td class="num">40%</td></tr>
+            <tr><td>Major Examinations</td><td class="num">40%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h4>Laboratory</h4>
+        <table class="data table-compact">
+          <tbody>
+            <tr><td>Written Works</td><td class="num">20%</td></tr>
+            <tr><td>Performance Task</td><td class="num">60%</td></tr>
+            <tr><td>Major Examinations</td><td class="num">20%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="small mb0">
+      Where a subject has a laboratory, the final standing is 67% of the
+      lecture figure plus 33% of the laboratory figure. The percentage is then
+      transmuted: 95.60 and above is 1.00, down to 60.00 for 3.00. A standing
+      between {{ Setting.get('removal_low') }} and {{ Setting.get('removal_high') }}
+      is a candidate for the removal examination rather than an outright
+      failure. Each of these figures can be changed per subject.
+    </p>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9636;</span>
+      <h2>No subjects</h2>
+      <p>You have no subjects assigned for this term.</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

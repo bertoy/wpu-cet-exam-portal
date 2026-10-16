@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ message.subject or 'Message' }} · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('messages.index') }}">Messages</a><span>/</span>
+  {{ message.subject|truncate(40) if message.subject else 'Message' }}
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <div class="grow">
+      <h1 style="font-size:1.2rem;margin-bottom:0.15rem">
+        {{ message.subject or '(no subject)' }}
+      </h1>
+      <p class="page-sub mb0">
+        From <strong>{{ message.sender.display_name }}</strong>
+        {%- if message.recipient %} to {{ message.recipient.display_name }}{% endif %}
+        &middot; {{ message.created_at|dt }}
+      </p>
+    </div>
+    {% if message.is_announcement %}
+      <span class="pill pill-info">announcement</span>
+    {% else %}
+      <span class="pill">private</span>
+    {% endif %}
+    {% if message.is_pinned %}<span class="pill pill-gold">pinned</span>{% endif %}
+  </div>
+
+  <div class="card-body">
+    {% if message.is_announcement and message.course %}
+    <p class="small muted">
+      Posted to {{ message.course.code }} — {{ message.course.title }}
+      {%- if recipients %} &middot; {{ recipients }} student(s) can see it{% endif %}.
+    </p>
+    {% endif %}
+
+    <div style="white-space:pre-wrap">{{ message.body }}</div>
+  </div>
+
+  <div class="card-foot flex">
+    <a class="button" href="{{ url_for('messages.index') }}">Back</a>
+    <span class="grow"></span>
+    {% if message.sender_id != current_user.id %}
+      <a class="button"
+         href="{{ url_for('messages.compose', student=message.sender_id,
+                          course=message.course_id, kind='private') }}">Reply</a>
+    {% endif %}
+    {% if message.sender_id == current_user.id or current_user.is_superadmin %}
+      <form class="inline-form" method="post"
+            action="{{ url_for('messages.delete', message_id=message.id) }}"
+            data-confirm="Delete this message?">
+        <button type="submit" class="button button-danger">Delete</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

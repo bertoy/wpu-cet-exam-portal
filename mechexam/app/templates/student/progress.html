@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}My progress · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>My progress</h1>
+    <p class="page-sub">
+      One tab for each subject you are enrolled in. Everything your instructor
+      has recorded for you appears here.
+    </p>
+  </div>
+</div>
+
+{% if courses %}
+<div class="tabs">
+  {% for course in courses %}
+    <a class="tab {{ 'active' if selected and selected.id == course.id }}"
+       href="{{ url_for('student.progress', subject=course.id) }}">
+      {{ course.code }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if selected and payload %}
+{% set result = payload.result %}
+
+<div class="card">
+  <div class="card-head">
+    <div class="grow">
+      <h2 style="margin-bottom:0.1rem">{{ selected.code }} — {{ selected.title }}</h2>
+      <p class="page-sub mb0">
+        {{ selected.term_label }}
+        {%- if payload.section %} &middot; section {{ payload.section.name }}{% endif %}
+        {%- if selected.owner %} &middot; {{ selected.owner.display_name }}{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <div class="card-body">
+    {% if payload.released %}
+      <div class="grid grid-4">
+        <div class="stat">
+          <div class="label">Lecture</div>
+          <div class="value">{{ result.lecture.percent|pct }}</div>
+          <div class="note">per cent</div>
+        </div>
+        {% if result.laboratory %}
+        <div class="stat">
+          <div class="label">Laboratory</div>
+          <div class="value">{{ result.laboratory.percent|pct }}</div>
+          <div class="note">per cent</div>
+        </div>
+        {% endif %}
+        <div class="stat">
+          <div class="label">Standing</div>
+          <div class="value">{{ result.final_display }}</div>
+          <div class="note">per cent overall</div>
+        </div>
+        <div class="stat">
+          <div class="label">Grade</div>
+          <div class="value grade {{ 'grade-pass' if result.effective_remark == 'Passed'
+                                     else ('grade-removal' if result.effective_remark == 'Removal' else 'grade-fail') }}">
+            {{ result.effective_grade }}
+          </div>
+          <div class="note">
+            <span class="pill {{ 'pill-pass' if result.effective_remark == 'Passed'
+                                 else ('pill-removal' if result.effective_remark == 'Removal' else 'pill-fail') }}">
+              {{ result.effective_remark }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {% if result.effective_remark == 'Removal' %}
+      <div class="callout callout-warning mt2">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          <p class="mb0">
+            Your standing falls in the removal band
+            ({{ selected.removal_low|pct }}–{{ selected.removal_high|pct }}%),
+            so you may sit a removal examination. Passing it gives you a grade
+            of 3.00. Speak to your instructor about when it will be held.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if selected.is_finalised %}
+      <div class="callout callout-info mt2">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            This subject has been finalised, so the grade above is the one of
+            record.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="callout callout-info">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            Your individual marks are shown below. Your instructor has not yet
+            released the computed standing for this subject.
+          </p>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------ the marks #}
+<div class="card">
+  <div class="card-head"><h2 class="grow">My marks</h2></div>
+  <div class="card-body flush">
+    {% if payload.entries %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Component</th><th>Activity</th><th>Given</th>
+            <th class="num">Score</th><th class="num">%</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in payload.entries %}
+          <tr>
+            <td class="small">
+              {{ entry.component.name }}
+              <div class="tiny muted">{{ entry.component.scope|title }}</div>
+            </td>
+            <td>
+              {{ entry.item.title }}
+              <span class="pill tiny">{{ entry.item.type_label }}</span>
+              {% if entry.remarks %}<div class="tiny muted">{{ entry.remarks }}</div>{% endif %}
+            </td>
+            <td class="tiny nowrap">{{ entry.item.date_given|d if entry.item.date_given else '—' }}</td>
+            <td class="num">
+              {% if entry.points is not none %}
+                <strong>{{ entry.points|num }}</strong> / {{ entry.item.max_points|num }}
+              {% else %}
+                <span class="muted">not yet marked</span>
+              {% endif %}
+            </td>
+            <td class="num">
+              {% if entry.percent is not none %}
+                <span class="{{ 'grade-pass' if entry.percent >= 60 else 'grade-fail' }}">
+                  {{ entry.percent|pct }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="right nowrap">
+              {% if entry.item.accepts_submission %}
+                <a class="button button-small"
+                   href="{{ url_for('student.submit', item_id=entry.item.id) }}">
+                  {{ 'Replace file' if entry.submission else 'Upload' }}
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% if entry.rubric %}
+          <tr>
+            <td></td>
+            <td colspan="5">
+              <details class="panel" style="margin:0">
+                <summary>
+                  How this was marked
+                  <span class="tail">{{ entry.rubric.total|num }} of
+                    {{ entry.rubric.rubric.total_points|num }}</span>
+                </summary>
+                <div class="panel-body">
+                  <table class="data table-compact">
+                    <thead><tr><th>Criterion</th><th class="num">Score</th><th class="num">Out of</th></tr></thead>
+                    <tbody>
+                      {% for criterion in entry.rubric.rubric.criteria %}
+                      <tr>
+                        <td class="small">
+                          {{ criterion.title }}
+                          {% if criterion.description %}
+                            <div class="tiny muted">{{ criterion.description }}</div>
+                          {% endif %}
+                        </td>
+                        <td class="num">
+                          {{ entry.rubric.scores.get(criterion.id|string, '—') }}
+                        </td>
+                        <td class="num">{{ criterion.max_points|num }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% if entry.rubric.comment %}
+                    <p class="small mt1 mb0">
+                      <strong>Comment:</strong> {{ entry.rubric.comment }}
+                    </p>
+                  {% endif %}
+                </div>
+              </details>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9636;</span>
+      <p>Nothing has been recorded for this subject yet.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------- component detail #}
+{% if payload.released %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">How the standing is worked out</h2></div>
+  <div class="card-body">
+    {% for scope in [result.lecture, result.laboratory] %}
+      {% if scope and scope.has_data %}
+      <h3>{{ scope.label }} — {{ scope.percent|pct }}%</h3>
+      <div class="table-wrap mb2">
+        <table class="data table-compact">
+          <thead>
+            <tr><th>Component</th><th class="num">Weight</th><th class="num">Your %</th><th class="num">Contributes</th></tr>
+          </thead>
+          <tbody>
+            {% for component in scope.components %}
+            <tr>
+              <td>{{ component.name }}</td>
+              <td class="num">{{ component.weight|num }}%</td>
+              <td class="num">{{ component.raw_percent|pct }}</td>
+              <td class="num">{{ component.weighted|pct }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    {% endfor %}
+
+    {% if result.laboratory and result.laboratory.has_data %}
+    <p class="small muted mb0">
+      The final standing is {{ selected.lecture_share|num }}% of the lecture
+      figure plus {{ selected.laboratory_share|num }}% of the laboratory
+      figure, giving {{ result.final_display }}%.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# --------------------------------------------------------- exams and files #}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">My exams in this subject</h2></div>
+    <div class="card-body {{ 'flush' if payload.attempts }}">
+      {% if payload.attempts %}
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead><tr><th>Exam</th><th class="num">Score</th><th>State</th><th></th></tr></thead>
+          <tbody>
+            {% for attempt in payload.attempts %}
+            <tr>
+              <td>{{ attempt.exam.title }}</td>
+              <td class="num">
+                {% if attempt.exam.show_score and attempt.is_submitted %}
+                  {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+                {% else %}<span class="muted">—</span>{% endif %}
+              </td>
+              <td class="small">
+                {% if attempt.is_submitted %}<span class="pill pill-pass">submitted</span>
+                {% else %}<span class="pill pill-open">in progress</span>{% endif %}
+              </td>
+              <td class="right">
+                <a class="button button-small"
+                   href="{{ url_for('taking.review', attempt_id=attempt.id) }}">Review</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="small muted mb0">You have not sat an exam in this subject yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Files to submit</h2></div>
+    <div class="card-body">
+      {% if payload.pending_submissions %}
+        <div class="stack">
+          {% for item in payload.pending_submissions %}
+          <div class="flex-between" style="border:1px solid var(--line);border-radius:var(--radius);padding:0.7rem">
+            <div class="grow">
+              <strong>{{ item.title }}</strong>
+              <div class="tiny muted">{{ item.type_label }} &middot; out of {{ item.max_points|num }}</div>
+            </div>
+            <a class="button button-small button-primary"
+               href="{{ url_for('student.submit', item_id=item.id) }}">Upload</a>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="small muted mb0">Nothing is waiting to be uploaded.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% else %}
+<div class="card">
+  <div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9776;</span>
+      <h2>No subjects yet</h2>
+      <p>
+        You are not enrolled in any subject. Your instructor adds you to the
+        class list, after which your progress appears here.
+      </p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Administration · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Administration</h1>
+    <p class="page-sub">
+      The portal is on <strong>{{ semester }}, {{ school_year }}</strong>.
+      Only subjects in that term appear to instructors and students.
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('admin.term') }}">Year &amp; semester</a>
+    <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Subjects</a>
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Administrators</div><div class="value">{{ counts.superadmins }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Instructors</div><div class="value">{{ counts.instructors }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Students</div><div class="value">{{ counts.students }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Subjects this term</div>
+    <div class="value">{{ counts.subjects_this_term }}</div>
+    <div class="note">{{ counts.subjects }} across all terms</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Things an administrator does</h2></div>
+    <div class="card-body">
+      <div class="stack">
+        <a class="button button-block" href="{{ url_for('admin.users') }}">
+          Manage accounts &amp; issue reset codes
+        </a>
+        <a class="button button-block" href="{{ url_for('admin.subjects') }}">
+          Add subjects &amp; assign instructors
+        </a>
+        <a class="button button-block" href="{{ url_for('admin.term') }}">
+          Set the school year and semester
+        </a>
+        <a class="button button-block" href="{{ url_for('admin.system') }}">
+          System check, backup &amp; restore
+        </a>
+        <a class="button button-block" href="{{ url_for('admin.audit') }}">
+          Activity log
+        </a>
+      </div>
+      <div class="callout callout-info mt2">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            Instructors cannot add or delete subjects, and see only the
+            subjects assigned to them. Assign subjects here.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">Latest activity</h2>
+      <a class="button button-small" href="{{ url_for('admin.audit') }}">Full log</a>
+    </div>
+    <div class="card-body {{ 'flush' if recent }}">
+      {% if recent %}
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>
+          <tbody>
+            {% for entry in recent %}
+            <tr>
+              <td class="tiny nowrap">{{ entry.created_at|dt('%d %b %H:%M') }}</td>
+              <td class="small">{{ entry.user.display_name if entry.user else '—' }}</td>
+              <td class="small">
+                {{ entry.action.replace('_', ' ')|title }}
+                {% if entry.detail %}<span class="tiny muted">— {{ entry.detail|truncate(48) }}</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty"><p>Nothing recorded yet.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

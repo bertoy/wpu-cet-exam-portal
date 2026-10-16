@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Mark essay · {{ attempt.student.display_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.results', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>
+  <a href="{{ url_for('exams.attempt_detail', attempt_id=attempt.id) }}">{{ attempt.student.display_name }}</a>
+  <span>/</span>Rubric
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Mark the written answer</h1>
+    <p class="page-sub">
+      {{ attempt.student.display_name }} &middot; {{ exam.title }}
+      &middot; against “{{ rubric.name }}”
+      &middot; out of {{ answer.max_points|num }}
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">The question</h2></div>
+  <div class="card-body">
+    <div class="question-text" data-math data-math-source="{{ answer.question.text }}">
+      {{ answer.question.text }}
+    </div>
+    {% if answer.question.answer %}
+    <details class="panel">
+      <summary>Your guide answer</summary>
+      <div class="panel-body">
+        <p class="mb0" data-math data-math-source="{{ answer.question.answer }}">
+          {{ answer.question.answer }}
+        </p>
+      </div>
+    </details>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">What the student wrote</h2></div>
+  <div class="card-body">
+    <p class="mb0" style="white-space:pre-wrap">{{ answer.response or '(left blank)' }}</p>
+  </div>
+</div>
+
+<form method="post" data-total-group data-warn-unsaved>
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">{{ rubric.name }}</h2>
+      <span class="pill pill-info">{{ rubric.total_points|num }} points</span>
+    </div>
+    <div class="card-body">
+      {% set saved = existing.scores if existing else {} %}
+      {% for criterion in rubric.criteria %}
+      <div class="rubric-criterion">
+        <div class="rubric-criterion-head">
+          <span class="title">{{ loop.index }}. {{ criterion.title }}</span>
+          <span class="small muted nowrap">out of {{ criterion.max_points|num }}</span>
+        </div>
+        {% if criterion.description %}
+          <p class="small muted mb1">{{ criterion.description }}</p>
+        {% endif %}
+
+        {% set current = saved.get(criterion.id|string) %}
+        {% set steps = criterion.max_points|int %}
+        {% if steps <= 20 %}
+        <div class="rubric-scale">
+          {% for value in range(0, steps + 1) %}
+          <label class="{{ 'picked' if current is not none and current|int == value }}">
+            <input type="radio" name="criterion_{{ criterion.id }}" value="{{ value }}"
+                   data-total-input max="{{ criterion.max_points|num }}"
+                   {{ 'checked' if current is not none and current|int == value }}>
+            <span>{{ value }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <input type="number" name="criterion_{{ criterion.id }}" data-total-input
+               step="0.5" min="0" max="{{ criterion.max_points|num }}"
+               value="{{ current if current is not none else '' }}" style="max-width:8rem">
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <div class="field">
+        <label for="comment">Comment for the student</label>
+        <textarea id="comment" name="comment" rows="3">{{ existing.comment if existing else '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="rubric-total">
+    <div class="grow">
+      <div class="tiny" style="opacity:0.8;text-transform:uppercase;letter-spacing:0.07em">
+        Running total
+      </div>
+      <div>
+        <span class="figure" data-total-output>0</span>
+        <span style="opacity:0.8"> of {{ rubric.total_points|num }}</span>
+        <span style="opacity:0.8"> &middot; <span data-total-percent>—</span></span>
+      </div>
+    </div>
+    <button type="submit" class="button button-gold">Save the mark</button>
+  </div>
+</form>
+
+{% if rubric.total_points != answer.max_points %}
+<div class="callout callout-info mt2">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      The rubric is out of {{ rubric.total_points|num }} but this question is
+      worth {{ answer.max_points|num }}, so the total is rescaled when it is
+      recorded.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

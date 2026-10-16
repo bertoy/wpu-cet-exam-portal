@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Year &amp; semester · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Year &amp; semester
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>School year &amp; semester</h1>
+    <p class="page-sub">
+      This is set once for the whole portal. Subjects and students carry on
+      across years; only the subjects belonging to the current term are shown.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Current setting</h2></div>
+    <div class="card-body">
+      <form method="post" data-warn-unsaved>
+        <div class="field-row">
+          <div class="field">
+            <label for="school_year">School year</label>
+            <input type="text" id="school_year" name="school_year"
+                   value="{{ school_year }}" placeholder="2026-2027" required>
+          </div>
+          <div class="field">
+            <label for="semester">Semester</label>
+            <select id="semester" name="semester" required>
+              {% for option in semesters %}
+                <option value="{{ option }}" {{ 'selected' if option == semester }}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <fieldset>
+          <legend>Grading defaults for new subjects</legend>
+          <div class="field-row">
+            <div class="field">
+              <label for="passing_percent">Passing percentage</label>
+              <input type="number" id="passing_percent" name="passing_percent"
+                     step="0.01" min="0" max="100" value="{{ Setting.get('passing_percent') }}">
+            </div>
+            <div class="field">
+              <label for="removal_low">Removal band — from</label>
+              <input type="number" id="removal_low" name="removal_low"
+                     step="0.01" min="0" max="100" value="{{ Setting.get('removal_low') }}">
+            </div>
+            <div class="field">
+              <label for="removal_high">Removal band — to</label>
+              <input type="number" id="removal_high" name="removal_high"
+                     step="0.01" min="0" max="100" value="{{ Setting.get('removal_high') }}">
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label for="lecture_share">Lecture share of the final grade (%)</label>
+              <input type="number" id="lecture_share" name="lecture_share"
+                     step="1" min="0" max="100" value="{{ Setting.get('lecture_share') }}">
+            </div>
+            <div class="field">
+              <label for="laboratory_share">Laboratory share (%)</label>
+              <input type="number" id="laboratory_share" name="laboratory_share"
+                     step="1" min="0" max="100" value="{{ Setting.get('laboratory_share') }}">
+            </div>
+            <div class="field">
+              <label for="default_averaging">How components are averaged</label>
+              <select id="default_averaging" name="default_averaging">
+                <option value="total_points" {{ 'selected' if Setting.get('default_averaging') == 'total_points' }}>
+                  Total points ÷ total possible
+                </option>
+                <option value="item_average" {{ 'selected' if Setting.get('default_averaging') == 'item_average' }}>
+                  Average of each activity's percentage
+                </option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Behaviour</legend>
+          <div class="field">
+            <label for="exam_autosave_seconds">Save exam answers every (seconds)</label>
+            <input type="number" id="exam_autosave_seconds" name="exam_autosave_seconds"
+                   min="5" max="120" value="{{ Setting.get('exam_autosave_seconds') }}">
+          </div>
+          <label class="check">
+            <input type="checkbox" name="allow_student_self_password" value="1"
+                   {{ 'checked' if Setting.get_bool('allow_student_self_password') }}>
+            <span>Students may change their own password
+              <span class="check-note">Turn this off to have instructors set every password.</span></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" name="grades_released_default" value="1"
+                   {{ 'checked' if Setting.get_bool('grades_released_default') }}>
+            <span>New subjects show grades to students straight away
+              <span class="check-note">Off means each instructor publishes when ready.</span></span>
+          </label>
+        </fieldset>
+
+        <button type="submit" class="button button-primary">Save settings</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">End the semester</h2></div>
+    <div class="card-body">
+      <p class="small">
+        This closes <strong>{{ semester }}, {{ school_year }}</strong> and moves the
+        portal to the next term. Nothing is deleted: every subject, mark and
+        exam stays attached to the term it belongs to, and remains in the
+        records.
+      </p>
+
+      <form method="post" action="{{ url_for('admin.rollover') }}"
+            data-confirm="End {{ semester }}, {{ school_year }} and move the portal to the next term?">
+        <div class="field-row">
+          <div class="field">
+            <label for="next_year">New school year</label>
+            <input type="text" id="next_year" name="school_year"
+                   value="{{ suggestion.school_year }}">
+          </div>
+          <div class="field">
+            <label for="next_semester">New semester</label>
+            <select id="next_semester" name="semester">
+              {% for option in semesters %}
+                <option value="{{ option }}" {{ 'selected' if option == suggestion.semester }}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="carry_subjects" value="1" checked>
+          <span>Carry my subjects forward
+            <span class="check-note">Copies each subject's code, title, component
+              weights and sections into the new term, with no students and no
+              exams. Saves setting them up again.</span></span>
+        </label>
+
+        <button type="submit" class="button button-gold">
+          End {{ semester }} and continue
+        </button>
+      </form>
+
+      <div class="callout callout-info mt2">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            First Semester follows into Second, and Second into the next
+            year's First. Summer is set by hand whenever you need it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

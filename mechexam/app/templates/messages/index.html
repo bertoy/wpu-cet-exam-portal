@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Messages · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Messages</h1>
+    <p class="page-sub">
+      {% if current_user.is_staff %}
+        Announcements to a whole class or section, and private notes to one
+        student.
+      {% else %}
+        Announcements from your instructors, and private messages.
+      {% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    {% if listing %}
+    <form class="inline-form" method="post" action="{{ url_for('messages.read_all') }}">
+      <button type="submit" class="button">Mark all as read</button>
+    </form>
+    {% endif %}
+    <a class="button button-primary" href="{{ url_for('messages.compose') }}">
+      {{ 'Write a message' if not current_user.is_staff else 'Post an announcement' }}
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if listing %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th style="width:2.5rem"></th><th>Subject</th><th>From / to</th>
+            <th>Where</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          {% for message in listing %}
+          {% set unread = message.id not in read_ids and message.sender_id != current_user.id %}
+          <tr class="{{ '' if unread else 'row-muted' }}">
+            <td class="mid">
+              {% if message.is_pinned %}<span title="Pinned">&#128204;</span>
+              {% elif unread %}<span title="Unread" style="color:var(--gold-500)">&#9679;</span>
+              {% else %}<span class="muted">&#9675;</span>{% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('messages.detail', message_id=message.id) }}">
+                <strong>{{ message.subject or '(no subject)' }}</strong></a>
+              <div class="tiny muted">{{ message.body|truncate(70) }}</div>
+            </td>
+            <td class="small">
+              {% if message.sender_id == current_user.id %}
+                to {{ message.recipient.display_name if message.recipient else 'the class' }}
+              {% else %}
+                {{ message.sender.display_name }}
+              {% endif %}
+            </td>
+            <td class="small">
+              {% if message.is_announcement %}
+                <span class="pill pill-info">announcement</span>
+                {{ message.course.code if message.course else '' }}
+              {% else %}
+                <span class="pill">private</span>
+              {% endif %}
+            </td>
+            <td class="small nowrap">{{ message.created_at|dt('%d %b, %I:%M %p') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9993;</span>
+      <p>No messages.</p>
+      <a class="button button-primary" href="{{ url_for('messages.compose') }}">
+        {{ 'Write one' if not current_user.is_staff else 'Post an announcement' }}
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

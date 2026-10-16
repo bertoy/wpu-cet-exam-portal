@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set hide_sidebar = true %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="hero-inner">
+    <img class="hero-seal" src="{{ asset('img/me-seal.png') }}"
+         alt="Department of Mechanical Engineering seal">
+    <div class="grow">
+      <h1>Examination &amp; Gradebook Portal</h1>
+      <p class="lede">{{ college_name }}<br>{{ school_name }} &middot; {{ campus_name }}</p>
+      <span class="hero-term">{{ semester }}, {{ school_year }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>Sign in</h2></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('auth.login') }}">
+      {% if request.args.get('next') %}
+        <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+      {% endif %}
+
+      <div class="field">
+        <label for="identifier">Username or student number</label>
+        <input type="text" id="identifier" name="identifier" value="{{ identifier }}"
+               autocomplete="username" autocapitalize="none" spellcheck="false"
+               required autofocus>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required>
+      </div>
+
+      <label class="check">
+        <input type="checkbox" name="remember" value="1">
+        <span>Keep me signed in on this device</span>
+      </label>
+
+      <button type="submit" class="button button-primary button-block button-large">
+        Sign in
+      </button>
+    </form>
+
+    <p class="small muted mt2 mb0">
+      Students sign in with their student number. If you have forgotten your
+      password, ask your instructor for a reset code and then
+      <a href="{{ url_for('auth.recover') }}">set a new password</a>.
+    </p>
+  </div>
+</div>
+
+<p class="center tiny muted">
+  {{ department_name }} &middot; Portal v{{ app_version }}
+</p>
+{% endblock %}

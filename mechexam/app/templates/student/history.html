@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Exam history · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Exam history</h1>
+    <p class="page-sub">
+      Every exam you have submitted, newest first.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body flush">
+    {% if attempts %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Exam</th><th>Subject</th><th>Kind</th>
+            <th class="num">Score</th><th class="num">%</th><th>Submitted</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for attempt in attempts %}
+          <tr>
+            <td><strong>{{ attempt.exam.title }}</strong>
+              {% if attempt.auto_submitted %}
+                <div class="tiny muted">submitted automatically</div>
+              {% endif %}
+            </td>
+            <td class="small">{{ attempt.exam.course.code }}</td>
+            <td class="small">{{ attempt.exam.category }}</td>
+            <td class="num">
+              {% if attempt.exam.show_score %}
+                {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+              {% else %}<span class="muted">not released</span>{% endif %}
+            </td>
+            <td class="num">
+              {% if attempt.exam.show_score %}
+                <span class="{{ 'grade-pass' if attempt.percent >= 60 else 'grade-fail' }}">
+                  {{ attempt.percent|pct }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="small nowrap">{{ attempt.submitted_at|dt('%d %b %Y, %I:%M %p') }}</td>
+            <td class="right">
+              <a class="button button-small"
+                 href="{{ url_for('taking.review', attempt_id=attempt.id) }}">Review</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9998;</span>
+      <p>You have not submitted any exam yet.</p>
+      <a class="button" href="{{ url_for('taking.available') }}">See what is open</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

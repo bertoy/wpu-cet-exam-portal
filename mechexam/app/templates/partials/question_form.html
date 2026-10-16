@@ -1,0 +1,310 @@
+{#
+  The question editor, shared by the exam page and the question bank.
+
+  Parameters:
+    action        where to post
+    question      an existing Question, or none for a new one
+    question_types, difficulties, rubrics
+    show_bank_save / banks  — offer to keep a copy in a bank
+
+  Fields for every question type are present at once and the relevant group is
+  shown by the type selector. That keeps the markup simple and means a type
+  change never loses what has already been typed.
+#}
+{% set q = question %}
+{% set prefix = 'q%d_'|format(q.id) if q else 'new_' %}
+
+<form method="post" action="{{ action }}" class="question-editor">
+  <div class="field-row">
+    <div class="field">
+      <label for="{{ prefix }}qtype">Type of question</label>
+      <select id="{{ prefix }}qtype" name="qtype" class="qtype-select" required>
+        {% for value, label in question_types %}
+          <option value="{{ value }}" {{ 'selected' if q and q.qtype == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" style="flex:0 0 8rem">
+      <label for="{{ prefix }}points">Points</label>
+      <input type="number" id="{{ prefix }}points" name="points" step="0.5" min="0.5"
+             value="{{ q.points|num if q else '1' }}">
+      <p class="field-hint type-note" data-for="matching">per matched pair</p>
+    </div>
+    <div class="field" style="flex:0 0 10rem">
+      <label for="{{ prefix }}difficulty">Difficulty</label>
+      <select id="{{ prefix }}difficulty" name="difficulty">
+        {% for value in difficulties %}
+          <option value="{{ value }}" {{ 'selected' if q and q.difficulty == value }}>{{ value|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="{{ prefix }}topic">Topic</label>
+      <input type="text" id="{{ prefix }}topic" name="topic" placeholder="Ideal gas law"
+             value="{{ q.topic or '' if q else '' }}">
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="{{ prefix }}text">Question</label>
+    <textarea id="{{ prefix }}text" name="text" rows="3" data-equation required
+              placeholder="Air at $101.325\ \text{kPa}$ and $300\ \text{K}$ is compressed…">{{ q.text if q else '' }}</textarea>
+    <p class="field-hint">
+      Use the Equation button for mathematics. Anything between dollar signs is
+      rendered — <span class="mono">$x^{2}$</span> becomes a formula.
+    </p>
+  </div>
+
+  {# ---------------------------------------------------- multiple choice #}
+  <div class="type-group" data-types="mcq">
+    <fieldset>
+      <legend>Choices</legend>
+      {% set options = q.options if q and q.qtype == 'mcq' else [] %}
+      {% for index in range(1, 7) %}
+      <div class="field">
+        <label for="{{ prefix }}option_{{ index }}">
+          Choice {{ 'ABCDEF'[index - 1] }}{% if index > 2 %} <span class="muted">(optional)</span>{% endif %}
+        </label>
+        <input type="text" id="{{ prefix }}option_{{ index }}" name="option_{{ index }}"
+               data-equation
+               value="{{ options[index - 1] if options|length >= index else '' }}">
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label for="{{ prefix }}answer_mcq">Correct choice</label>
+        <input type="text" id="{{ prefix }}answer_mcq" name="answer_mcq"
+               value="{{ q.answer if q and q.qtype == 'mcq' else '' }}"
+               placeholder="Type the choice number (1) or the exact text">
+        <p class="field-hint">
+          The number of the correct choice is enough — 1 for A, 2 for B, and so on.
+        </p>
+      </div>
+    </fieldset>
+  </div>
+
+  {# ------------------------------------------------------ true or false #}
+  <div class="type-group" data-types="truefalse">
+    <div class="field" style="max-width:14rem">
+      <label for="{{ prefix }}answer_tf">Correct answer</label>
+      <select id="{{ prefix }}answer_tf" name="answer_tf">
+        <option value="True" {{ 'selected' if q and q.answer == 'True' }}>True</option>
+        <option value="False" {{ 'selected' if q and q.answer == 'False' }}>False</option>
+      </select>
+    </div>
+  </div>
+
+  {# ----------------------------------------------------------- numerical #}
+  <div class="type-group" data-types="numeric">
+    <div class="field-row">
+      <div class="field">
+        <label for="{{ prefix }}answer_num">Correct value</label>
+        <input type="text" id="{{ prefix }}answer_num" name="answer_num" class="mono"
+               value="{{ q.answer if q and q.qtype == 'numeric' else '' }}"
+               placeholder="202.65">
+      </div>
+      <div class="field" style="flex:0 0 11rem">
+        <label for="{{ prefix }}tolerance">Tolerance (%)</label>
+        <input type="number" id="{{ prefix }}tolerance" name="tolerance_percent"
+               step="0.1" min="0" max="100"
+               value="{{ q.tolerance_percent|num if q else '2' }}">
+      </div>
+      <div class="field" style="flex:0 0 9rem">
+        <label for="{{ prefix }}unit">Unit shown</label>
+        <input type="text" id="{{ prefix }}unit" name="unit" placeholder="kPa"
+               value="{{ q.unit or '' if q else '' }}">
+      </div>
+    </div>
+    <p class="field-hint">
+      A tolerance of 2% accepts anything within 2% of the value, which is what
+      rounding during a long computation needs. Zero demands the exact figure.
+    </p>
+  </div>
+
+  {# -------------------------------------------------------- short answer #}
+  <div class="type-group" data-types="short">
+    <div class="field">
+      <label for="{{ prefix }}answer_short">Accepted answers</label>
+      <input type="text" id="{{ prefix }}answer_short" name="answer_short"
+             value="{{ q.answer if q and q.qtype == 'short' else '' }}"
+             placeholder="Boyle's law | Boyles law | Boyle">
+      <p class="field-hint">
+        Separate alternatives with a vertical bar. Capitals, accents and
+        punctuation are ignored when marking.
+      </p>
+    </div>
+  </div>
+
+  {# ------------------------------------------------------- matching type #}
+  <div class="type-group" data-types="matching">
+    <fieldset>
+      <legend>Pairs</legend>
+      <p class="field-hint mb1">
+        The left column keeps its order for the student; the right column is
+        shuffled. Each correct pair earns the points set above.
+      </p>
+      {% set pairs = q.pairs if q and q.qtype == 'matching' else [] %}
+      {% for index in range(1, 7) %}
+      <div class="field-row">
+        <div class="field">
+          <label for="{{ prefix }}pair_left_{{ index }}">Item {{ index }}</label>
+          <input type="text" id="{{ prefix }}pair_left_{{ index }}" name="pair_left_{{ index }}"
+                 value="{{ pairs[index - 1].left if pairs|length >= index else '' }}">
+        </div>
+        <div class="field">
+          <label for="{{ prefix }}pair_right_{{ index }}">Matches with</label>
+          <input type="text" id="{{ prefix }}pair_right_{{ index }}" name="pair_right_{{ index }}"
+                 value="{{ pairs[index - 1].right if pairs|length >= index else '' }}">
+        </div>
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label for="{{ prefix }}pairs_bulk">…or paste more pairs</label>
+        <textarea id="{{ prefix }}pairs_bulk" name="pairs_bulk" rows="3" spellcheck="false"
+placeholder="Isothermal = Temperature
+Isobaric = Pressure
+Isochoric = Volume"></textarea>
+      </div>
+    </fieldset>
+  </div>
+
+  {# ---------------------------------------------------------------- essay #}
+  <div class="type-group" data-types="essay">
+    <div class="field">
+      <label for="{{ prefix }}answer_essay">Guide answer <span class="muted">(for your eyes only)</span></label>
+      <textarea id="{{ prefix }}answer_essay" name="answer_essay" rows="3" data-equation>{{ q.answer if q and q.qtype == 'essay' else '' }}</textarea>
+    </div>
+    <div class="field">
+      <label for="{{ prefix }}rubric">Mark against a rubric</label>
+      <select id="{{ prefix }}rubric" name="rubric_id">
+        <option value="">No rubric — award points freely</option>
+        {% for rubric in rubrics %}
+          <option value="{{ rubric.id }}" {{ 'selected' if q and q.rubric_id == rubric.id }}>
+            {{ rubric.name }} — {{ rubric.criteria|length }} criteria,
+            {{ rubric.total_points|num }} points
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="callout callout-info">
+      <span class="glyph" aria-hidden="true">&#8505;</span>
+      <div class="grow">
+        <p class="mb0">
+          Written answers are never marked automatically. They wait in the
+          attempt for you to read, and the dashboard counts how many are
+          outstanding.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {# --------------------------------------------- multi-part problem solving #}
+  <div class="type-group" data-types="multipart">
+    <fieldset>
+      <legend>Sub-items</legend>
+      <p class="field-hint mb1">
+        One problem statement above, then as many lettered items as you need,
+        each with its own answer and points. The points for the problem are the
+        sum of its items.
+      </p>
+
+      {% set parts = q.parts if q else [] %}
+      {% for index in range(1, 7) %}
+      {% set part = parts[index - 1] if parts|length >= index else none %}
+      <div class="subpart">
+        <div class="field-row">
+          <div class="field" style="flex:0 0 5rem">
+            <label for="{{ prefix }}part_label_{{ index }}">Label</label>
+            <input type="text" id="{{ prefix }}part_label_{{ index }}" name="part_label_{{ index }}"
+                   value="{{ part.label if part else 'abcdef'[index - 1] }}">
+          </div>
+          <div class="field" style="flex:3 1 16rem">
+            <label for="{{ prefix }}part_text_{{ index }}">Asks for</label>
+            <input type="text" id="{{ prefix }}part_text_{{ index }}" name="part_text_{{ index }}"
+                   data-equation value="{{ part.text if part else '' }}"
+                   placeholder="Find the mass of air in the tank.">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field" style="flex:0 0 10rem">
+            <label for="{{ prefix }}part_type_{{ index }}">Answer is</label>
+            <select id="{{ prefix }}part_type_{{ index }}" name="part_type_{{ index }}">
+              <option value="numeric" {{ 'selected' if not part or part.answer_type in ('numeric', 'num') }}>Numerical</option>
+              <option value="short" {{ 'selected' if part and part.answer_type == 'short' }}>Short answer</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="{{ prefix }}part_answer_{{ index }}">Correct answer</label>
+            <input type="text" id="{{ prefix }}part_answer_{{ index }}" name="part_answer_{{ index }}"
+                   class="mono" value="{{ part.answer if part else '' }}">
+          </div>
+          <div class="field" style="flex:0 0 7rem">
+            <label for="{{ prefix }}part_points_{{ index }}">Points</label>
+            <input type="number" id="{{ prefix }}part_points_{{ index }}" name="part_points_{{ index }}"
+                   step="0.5" min="0" value="{{ part.points|num if part else '' }}">
+          </div>
+          <div class="field" style="flex:0 0 7rem">
+            <label for="{{ prefix }}part_tolerance_{{ index }}">Tol. (%)</label>
+            <input type="number" id="{{ prefix }}part_tolerance_{{ index }}" name="part_tolerance_{{ index }}"
+                   step="0.1" min="0" value="{{ part.tolerance_percent|num if part else '2' }}">
+          </div>
+          <div class="field" style="flex:0 0 6rem">
+            <label for="{{ prefix }}part_unit_{{ index }}">Unit</label>
+            <input type="text" id="{{ prefix }}part_unit_{{ index }}" name="part_unit_{{ index }}"
+                   value="{{ part.unit or '' if part else '' }}">
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="field">
+        <label for="{{ prefix }}parts_bulk">…or paste the sub-items</label>
+        <textarea id="{{ prefix }}parts_bulk" name="parts_bulk" rows="4" spellcheck="false"
+placeholder="a | Find the mass of air | 1.162 | num | 4 | 2
+b | Find the specific volume | 0.4304 | 4 | num | 2
+c | Name the process | isochoric | short | 3"></textarea>
+        <p class="field-hint">
+          <span class="mono">label | question | answer</span>, then any of
+          the answer type, the points and the tolerance — in whichever order
+          you like. Anything that cannot be read is reported rather than
+          silently dropped.
+        </p>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="field">
+    <label for="{{ prefix }}explanation">Explanation shown after marking <span class="muted">(optional)</span></label>
+    <textarea id="{{ prefix }}explanation" name="explanation" rows="2"
+              data-equation>{{ q.explanation or '' if q else '' }}</textarea>
+  </div>
+
+  {% if show_bank_save and banks %}
+  <fieldset>
+    <legend>Keep a copy</legend>
+    <label class="check">
+      <input type="checkbox" name="save_to_bank" value="1">
+      <span>Also save this question to a bank, to reuse next term</span>
+    </label>
+    <div class="field" style="max-width:22rem">
+      <label for="{{ prefix }}bank_id">Bank</label>
+      <select id="{{ prefix }}bank_id" name="bank_id">
+        {% for bank in banks %}
+          <option value="{{ bank.id }}">{{ bank.name }} ({{ bank.question_count }} items)</option>
+        {% endfor %}
+      </select>
+    </div>
+  </fieldset>
+  {% endif %}
+
+  <div class="button-row">
+    <button type="submit" class="button button-primary">
+      {{ 'Save question' if q else 'Add question' }}
+    </button>
+    {% if q %}
+      <button type="submit" name="action" value="up" class="button button-small">Move up</button>
+      <button type="submit" name="action" value="down" class="button button-small">Move down</button>
+      <button type="submit" name="action" value="delete" class="button button-small button-danger"
+              onclick="return confirm('Delete this question?')">Delete</button>
+    {% endif %}
+  </div>
+</form>

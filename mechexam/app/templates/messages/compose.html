@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Write a message · {{ app_name }}{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('messages.index') }}">Messages</a><span>/</span>Write
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Write a message</h1>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <form method="post" data-warn-unsaved>
+      {% if current_user.is_staff %}
+      <div class="field">
+        <label for="kind">Who it goes to</label>
+        <select id="kind" name="kind">
+          <option value="announcement" {{ 'selected' if default_kind == 'announcement' }}>
+            An announcement to a whole class or section
+          </option>
+          <option value="private" {{ 'selected' if default_kind == 'private' }}>
+            A private message to one student
+          </option>
+        </select>
+      </div>
+      {% else %}
+        <input type="hidden" name="kind" value="private">
+      {% endif %}
+
+      {% if courses %}
+      <div class="field">
+        <label for="course_id">Subject</label>
+        <select id="course_id" name="course_id"
+                {% if current_user.is_staff %}
+                data-load-into="#section_id"
+                data-load-url="{{ url_for('exams.sections_json', course_id=0)|replace('/0/', '/__ID__/') }}"
+                data-load-placeholder="Every section"
+                {% endif %}>
+          {% if not current_user.is_staff %}<option value="">— no particular subject —</option>{% endif %}
+          {% for course in courses %}
+            <option value="{{ course.id }}" {{ 'selected' if preselect_course == course.id }}>
+              {{ course.code }} — {{ course.title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if current_user.is_staff %}
+      <div class="field">
+        <label for="section_id">Section <span class="muted">(announcements only)</span></label>
+        <select id="section_id" name="section_id">
+          <option value="">Every section</option>
+        </select>
+        <p class="field-hint">Leave as every section to reach the whole class.</p>
+      </div>
+      {% endif %}
+
+      <div class="field">
+        <label for="recipient_id">
+          {{ 'Student' if current_user.is_staff else 'Instructor' }}
+          <span class="muted">(private messages only)</span>
+        </label>
+        <select id="recipient_id" name="recipient_id">
+          <option value="">— choose —</option>
+          {% for person in people %}
+            <option value="{{ person.id }}" {{ 'selected' if preselect_student == person.id }}>
+              {{ person.name }}{% if person.student_number %} ({{ person.student_number }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        {% if not people %}
+          <p class="field-hint">
+            {% if current_user.is_staff %}
+              No students are enrolled in your subjects yet.
+            {% else %}
+              Your subjects have no instructor assigned yet.
+            {% endif %}
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="subject">Subject line</label>
+        <input type="text" id="subject" name="subject" placeholder="Quiz 3 on Friday">
+      </div>
+
+      <div class="field">
+        <label for="body">Message</label>
+        <textarea id="body" name="body" rows="7" required
+                  placeholder="Bring a calculator. Coverage is the ideal gas law and processes."></textarea>
+      </div>
+
+      {% if current_user.is_staff %}
+      <label class="check">
+        <input type="checkbox" name="is_pinned" value="1">
+        <span>Pin it to the top of the list
+          <span class="check-note">For something that should stay visible, such as an exam schedule.</span></span>
+      </label>
+      {% endif %}
+
+      <div class="button-row">
+        <button type="submit" class="button button-primary">Send</button>
+        <a class="button" href="{{ url_for('messages.index') }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

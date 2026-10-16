@@ -1,0 +1,21 @@
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="flash-stack" role="status" aria-live="polite">
+    {% for category, message in messages %}
+      {% set kind = 'success' if category == 'success'
+                    else 'error' if category in ('error', 'danger')
+                    else 'warning' if category == 'warning'
+                    else 'info' %}
+      <div class="callout callout-{{ kind }}">
+        <span class="glyph" aria-hidden="true">
+          {%- if kind == 'success' %}&#10003;
+          {%- elif kind == 'error' %}&#9888;
+          {%- elif kind == 'warning' %}&#9888;
+          {%- else %}&#8505;{% endif -%}
+        </span>
+        <div class="grow">{{ message }}</div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endwith %}

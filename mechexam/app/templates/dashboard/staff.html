@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="hero-inner">
+    <img class="hero-seal" src="{{ asset('img/me-seal.png') }}"
+         alt="Department of Mechanical Engineering seal">
+    <div class="grow">
+      <h1>Good day, {{ current_user.display_name.split()[0] if current_user.display_name else 'there' }}</h1>
+      <p class="lede">{{ college_name }} &middot; {{ department_name }}</p>
+      <span class="hero-term">{{ semester }}, {{ school_year }}</span>
+    </div>
+    <div class="hero-clock" data-clock>
+      <div class="time" data-clock-time>&nbsp;</div>
+      <div class="date" data-clock-date>&nbsp;</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Subjects</div>
+    <div class="value">{{ stats.subjects }}</div>
+    <div class="note">assigned this term</div>
+  </div>
+  <div class="stat">
+    <div class="label">Students</div>
+    <div class="value">{{ stats.students }}</div>
+    <div class="note">enrolments across your subjects</div>
+  </div>
+  <div class="stat">
+    <div class="label">Open exams</div>
+    <div class="value">{{ stats.open_exams }}</div>
+    <div class="note">{{ 'running now' if stats.open_exams else 'none running' }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Awaiting marking</div>
+    <div class="value">{{ stats.pending_essays }}</div>
+    <div class="note">written answers to read</div>
+  </div>
+  {% if current_user.is_superadmin %}
+  <div class="stat">
+    <div class="label">Instructors</div>
+    <div class="value">{{ stats.instructors }}</div>
+    <div class="note">accounts</div>
+  </div>
+  <div class="stat">
+    <div class="label">Student accounts</div>
+    <div class="value">{{ stats.all_students }}</div>
+    <div class="note">in the whole portal</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if open_exams %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Examinations running now</h2>
+    <span class="pill pill-open">live</span>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Exam</th><th>Subject</th><th class="mid">PIN</th>
+            <th class="num">Time left</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for exam in open_exams %}
+          <tr>
+            <td>
+              <a href="{{ url_for('exams.monitor', exam_id=exam.id) }}"><strong>{{ exam.title }}</strong></a>
+              <div class="tiny muted">{{ exam.category }}{% if exam.section %} · section {{ exam.section.name }}{% endif %}</div>
+            </td>
+            <td class="small">{{ exam.course.code }}</td>
+            <td class="mid mono">{{ exam.access_code }}</td>
+            <td class="num">{{ exam.seconds_remaining|mmss }}</td>
+            <td class="right">
+              <a class="button button-small" href="{{ url_for('exams.monitor', exam_id=exam.id) }}">Monitor</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">My subjects</h2>
+      <a class="button button-small" href="{{ url_for('courses.index') }}">See all</a>
+    </div>
+    <div class="card-body {{ 'flush' if courses }}">
+      {% if courses %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Code</th><th>Title</th><th class="mid">Lab</th><th></th></tr></thead>
+          <tbody>
+            {% for course in courses %}
+            <tr>
+              <td><a href="{{ url_for('courses.detail', course_id=course.id) }}"><strong>{{ course.code }}</strong></a></td>
+              <td class="small">{{ course.title }}
+                {% if course.is_finalised %}<span class="pill pill-info">finalised</span>{% endif %}
+              </td>
+              <td class="mid">{{ 'Yes' if course.has_laboratory else '—' }}</td>
+              <td class="right nowrap">
+                <a class="button button-small" href="{{ url_for('gradebook.course', course_id=course.id) }}">Grades</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9776;</span>
+        <p>No subjects are assigned to you for {{ semester }}, {{ school_year }}.</p>
+        {% if current_user.is_superadmin %}
+          <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Add a subject</a>
+        {% else %}
+          <p class="tiny">The administrator assigns subjects to instructors.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Quick actions</h2></div>
+    <div class="card-body">
+      <div class="stack">
+        <a class="button button-primary button-block" href="{{ url_for('exams.create') }}">
+          Create an examination
+        </a>
+        <a class="button button-block" href="{{ url_for('gradebook.index') }}">
+          Open the gradebook
+        </a>
+        <a class="button button-block" href="{{ url_for('messages.compose', kind='announcement') }}">
+          Post an announcement
+        </a>
+        <a class="button button-block" href="{{ url_for('rubrics.index') }}">
+          Manage rubrics
+        </a>
+        {% if current_user.is_superadmin %}
+        <a class="button button-block" href="{{ url_for('admin.system') }}">
+          System check &amp; backup
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if recent_submissions %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Recent submissions</h2></div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead><tr><th>Student</th><th>Activity</th><th>File</th><th>When</th><th class="mid">Drive</th></tr></thead>
+        <tbody>
+          {% for row in recent_submissions %}
+          <tr>
+            <td>{{ row.student.name }}</td>
+            <td class="small">{{ row.item.title if row.item else '—' }}</td>
+            <td class="small">
+              <a href="{{ url_for('student.submission_file', submission_id=row.id) }}">{{ row.filename|truncate(40) }}</a>
+            </td>
+            <td class="small nowrap">{{ row.submitted_at|dt('%d %b, %I:%M %p') }}</td>
+            <td class="mid">
+              {% if row.drive_url %}<a href="{{ row.drive_url }}" target="_blank" rel="noopener">open</a>
+              {% elif row.drive_error %}<span class="pill pill-fail" title="{{ row.drive_error }}">failed</span>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

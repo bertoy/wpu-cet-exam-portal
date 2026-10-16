@@ -1,0 +1,426 @@
+{% extends "base.html" %}
+{% block title %}{{ exam.title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  {{ exam.title }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ exam.title }}</h1>
+    <p class="page-sub">
+      {{ course.code }} &middot; {{ exam.category }}
+      {%- if exam.section %} &middot; section {{ exam.section.name }}{% endif %}
+      &middot; {{ exam.questions|length }} question{{ '' if exam.questions|length == 1 else 's' }}
+      &middot; {{ exam.total_points|num }} points
+      &middot; {{ exam.duration_minutes }} minutes
+    </p>
+  </div>
+  <div class="button-row">
+    {% if exam.is_open and not exam.is_expired %}
+      <span class="pill pill-open">open — {{ exam.seconds_remaining|mmss }} left</span>
+      <a class="button button-gold" href="{{ url_for('exams.monitor', exam_id=exam.id) }}">Monitor</a>
+      <form class="inline-form" method="post" action="{{ url_for('exams.close_exam', exam_id=exam.id) }}"
+            data-confirm="Close this exam for everyone and submit what is on screen?">
+        <button type="submit" class="button button-danger">Close now</button>
+      </form>
+    {% else %}
+      <form class="inline-form" method="post" action="{{ url_for('exams.open_exam', exam_id=exam.id) }}"
+            data-confirm="Open the exam now? The clock starts immediately for the whole class.">
+        <button type="submit" class="button button-primary"
+                {{ 'disabled' if not exam.questions }}>Open the exam</button>
+      </form>
+      <a class="button" href="{{ url_for('exams.results', exam_id=exam.id) }}">Results</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not exam.questions %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      This exam has no questions yet, so it cannot be opened. Add some below,
+      or pull a set from a question bank.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#128273;</span>
+  <div class="grow">
+    <p class="mb0">
+      The exam PIN is <strong class="mono">{{ exam.access_code }}</strong>.
+      Students are asked for it once, at the moment they start.
+    </p>
+  </div>
+</div>
+
+{# -------------------------------------------------------------- questions #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Questions</h2>
+    <span class="small muted">{{ exam.total_points|num }} points in total</span>
+  </div>
+  <div class="card-body">
+    {% if exam.questions %}
+      {% for question in exam.questions %}
+      <div class="question">
+        <div class="question-head">
+          <span class="question-number">{{ loop.index }}</span>
+          <span class="pill">{{ question.type_label }}</span>
+          {% if question.topic %}<span class="tiny muted">{{ question.topic }}</span>{% endif %}
+          <span class="pill tiny">{{ question.difficulty }}</span>
+          {% if question.figure_path %}<span class="pill pill-info tiny">has a figure</span>{% endif %}
+          {% if question.rubric_id %}<span class="pill pill-info tiny">rubric</span>{% endif %}
+          <span class="question-points">{{ question.effective_points|num }} pt{{ '' if question.effective_points == 1 else 's' }}</span>
+        </div>
+        <div class="question-body">
+          <div class="question-text" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+          {% if question.figure_path %}
+          <figure class="question-figure">
+            <img src="{{ url_for('exams.figure', name=question.figure_path) }}" alt="{{ question.figure_caption or 'Figure' }}">
+            {% if question.figure_caption %}<figcaption>{{ question.figure_caption }}</figcaption>{% endif %}
+          </figure>
+          {% endif %}
+
+          {% if question.qtype in ('mcq', 'truefalse') %}
+            {% for option in question.options %}
+            <div class="option {{ 'correct' if option == question.answer }}">
+              <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+              <span data-math data-math-source="{{ option }}">{{ option }}</span>
+              {% if option == question.answer %}<span class="pill pill-pass tiny">key</span>{% endif %}
+            </div>
+            {% endfor %}
+          {% elif question.qtype == 'numeric' %}
+            <p class="small mb0">
+              Key: <strong class="mono">{{ question.answer }}</strong>
+              {%- if question.unit %} {{ question.unit }}{% endif %}
+              &middot; tolerance {{ question.tolerance_percent|num }}%
+            </p>
+          {% elif question.qtype == 'short' %}
+            <p class="small mb0">Accepted: <strong>{{ question.answer }}</strong></p>
+          {% elif question.qtype == 'matching' %}
+            <table class="data table-compact">
+              <thead><tr><th>Item</th><th>Correct match</th></tr></thead>
+              <tbody>
+                {% for pair in question.pairs %}
+                <tr><td>{{ pair.left }}</td><td>{{ pair.right }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <p class="tiny muted mb0">
+              {{ question.points|num }} point(s) per correct pair; the right-hand
+              column is shuffled for each student.
+            </p>
+          {% elif question.qtype == 'essay' %}
+            <p class="small muted mb0">
+              Marked by hand{% if question.rubric %} against “{{ question.rubric.name }}”{% endif %}.
+            </p>
+          {% elif question.qtype == 'multipart' %}
+            {% for part in question.parts %}
+            <div class="subpart">
+              <span class="subpart-label">{{ part.label }})</span>
+              <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
+              <div class="small">
+                Key: <strong class="mono">{{ part.answer }}</strong>
+                {%- if part.unit %} {{ part.unit }}{% endif %}
+                <span class="subpart-points">
+                  — {{ part.points|num }} pt{{ '' if part.points == 1 else 's' }},
+                  {{ part.answer_type }}{% if part.tolerance_percent %}, ±{{ part.tolerance_percent|num }}%{% endif %}
+                </span>
+              </div>
+            </div>
+            {% endfor %}
+            {% if not question.parts %}
+              <div class="callout callout-warning">
+                <span class="glyph" aria-hidden="true">&#9888;</span>
+                <div class="grow"><p class="mb0">This problem has no sub-items, so it is worth nothing. Edit it below.</p></div>
+              </div>
+            {% endif %}
+          {% endif %}
+
+          {% if question.explanation %}
+          <p class="small muted mt1 mb0">
+            Explanation:
+            <span data-math data-math-source="{{ question.explanation }}">{{ question.explanation }}</span>
+          </p>
+          {% endif %}
+
+          <details class="panel mt1">
+            <summary>Edit this question</summary>
+            <div class="panel-body">
+              {% with action = url_for('exams.question_edit', question_id=question.id) %}
+                {% include "partials/question_form.html" %}
+              {% endwith %}
+
+              <hr>
+              <h4>Figure</h4>
+              <form method="post" enctype="multipart/form-data"
+                    action="{{ url_for('exams.figure_upload', question_id=question.id) }}">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="figure_{{ question.id }}">Image</label>
+                    <input type="file" id="figure_{{ question.id }}" name="figure"
+                           accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" required>
+                  </div>
+                  <div class="field">
+                    <label for="caption_{{ question.id }}">Caption</label>
+                    <input type="text" id="caption_{{ question.id }}" name="figure_caption"
+                           value="{{ question.figure_caption or '' }}">
+                  </div>
+                </div>
+                <div class="button-row">
+                  <button type="submit" class="button button-small">Attach figure</button>
+                </div>
+              </form>
+              {% if question.figure_path %}
+              <form method="post" action="{{ url_for('exams.figure_remove', question_id=question.id) }}"
+                    data-confirm="Remove the figure from this question?">
+                <button type="submit" class="button button-small button-danger mt1">Remove the figure</button>
+              </form>
+              {% endif %}
+              <p class="tiny muted mt1 mb0">
+                Figures are kept in the data folder, outside the program files,
+                so they survive an update of the app.
+              </p>
+            </div>
+          </details>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9783;</span>
+        <p>No questions yet.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------ add question #}
+<div class="card" id="add-question">
+  <div class="card-head"><h2 class="grow">Add a question</h2></div>
+  <div class="card-body">
+    {% with action = url_for('exams.question_add', exam_id=exam.id),
+            question = none, show_bank_save = true %}
+      {% include "partials/question_form.html" %}
+    {% endwith %}
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- from bank #}
+{% if banks %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Take questions from a bank</h2></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('exams.pull_from_bank', exam_id=exam.id) }}">
+      <div class="field-row">
+        <div class="field">
+          <label for="bank_id">Bank</label>
+          <select id="bank_id" name="bank_id" required>
+            {% for bank in banks %}
+              <option value="{{ bank.id }}">{{ bank.name }} ({{ bank.question_count }} items)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="bank_topic">Only this topic</label>
+          <input type="text" id="bank_topic" name="topic" placeholder="Any topic">
+        </div>
+        <div class="field">
+          <label for="bank_difficulty">Only this difficulty</label>
+          <select id="bank_difficulty" name="difficulty">
+            <option value="">Any</option>
+            {% for value in difficulties %}<option value="{{ value }}">{{ value|title }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field" style="flex:0 0 9rem">
+          <label for="bank_count">How many</label>
+          <input type="number" id="bank_count" name="count" min="1" value="10">
+        </div>
+      </div>
+      <p class="field-hint">
+        Questions are copied in, so editing them here leaves the bank untouched.
+        Fewer requested than available means a random draw.
+      </p>
+      <button type="submit" class="button">Add from the bank</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ---------------------------------------------------------------- settings #}
+<details class="panel">
+  <summary>Examination settings</summary>
+  <div class="panel-body">
+    <form method="post" action="{{ url_for('exams.update_settings', exam_id=exam.id) }}">
+      <div class="field-row">
+        <div class="field" style="flex:2 1 20rem">
+          <label for="title">Title</label>
+          <input type="text" id="title" name="title" value="{{ exam.title }}">
+        </div>
+        <div class="field">
+          <label for="category">Kind</label>
+          <select id="category" name="category">
+            {% for option in categories %}
+              <option value="{{ option }}" {{ 'selected' if option == exam.category }}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="duration_minutes">Length (minutes)</label>
+          <input type="number" id="duration_minutes" name="duration_minutes"
+                 min="1" max="600" value="{{ exam.duration_minutes }}">
+          {% if exam.is_open %}
+            <p class="field-hint">Changing this now shifts the shared deadline for everybody.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="topic">Coverage</label>
+          <input type="text" id="topic" name="topic" value="{{ exam.topic or '' }}">
+        </div>
+        <div class="field">
+          <label for="access_code">Exam PIN</label>
+          <input type="text" id="access_code" name="access_code" class="mono" value="{{ exam.access_code }}">
+        </div>
+        {% if sections %}
+        <div class="field">
+          <label for="section_id">For which section</label>
+          <select id="section_id" name="section_id">
+            <option value="">All sections</option>
+            {% for section in sections %}
+              <option value="{{ section.id }}" {{ 'selected' if exam.section_id == section.id }}>{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="instructions">Instructions</label>
+        <textarea id="instructions" name="instructions" rows="3" data-equation>{{ exam.instructions or '' }}</textarea>
+      </div>
+
+      <div class="field">
+        <label for="exit_mode">If a student leaves the exam</label>
+        <select id="exit_mode" name="exit_mode">
+          {% for value, label in exit_modes %}
+            <option value="{{ value }}" {{ 'selected' if exam.exit_mode == value }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-row">
+        <div class="field" style="flex:0 0 12rem">
+          <label for="exit_grace_seconds">Grace period (seconds)</label>
+          <input type="number" id="exit_grace_seconds" name="exit_grace_seconds"
+                 min="10" max="900" value="{{ exam.exit_grace_seconds }}">
+        </div>
+        <div class="field" style="flex:0 0 14rem">
+          <label for="bank_draw_count">Questions per student</label>
+          <input type="number" id="bank_draw_count" name="bank_draw_count"
+                 min="0" value="{{ exam.bank_draw_count or 0 }}">
+        </div>
+        <div class="field">
+          <label for="link_item_id">Record the score under</label>
+          <select id="link_item_id" name="link_item_id">
+            <option value="">Do not copy into the gradebook</option>
+            {% for item in gradebook_items %}
+              <option value="{{ item.id }}" {{ 'selected' if exam.link_item_id == item.id }}>
+                {{ item.component.name }} — {{ item.title }} (out of {{ item.max_points|num }})
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div>
+          <label class="check">
+            <input type="checkbox" name="shuffle_questions" value="1" {{ 'checked' if exam.shuffle_questions }}>
+            <span>Shuffle the questions</span></label>
+          <label class="check">
+            <input type="checkbox" name="shuffle_options" value="1" {{ 'checked' if exam.shuffle_options }}>
+            <span>Shuffle the choices</span></label>
+          <label class="check">
+            <input type="checkbox" name="block_paste" value="1" {{ 'checked' if exam.block_paste }}>
+            <span>Block pasting</span></label>
+        </div>
+        <div>
+          <label class="check">
+            <input type="checkbox" name="allow_calculator" value="1" {{ 'checked' if exam.allow_calculator }}>
+            <span>Calculator and scratch pad</span></label>
+          <label class="check">
+            <input type="checkbox" name="allow_backtrack" value="1" {{ 'checked' if exam.allow_backtrack }}>
+            <span>Allow going back</span></label>
+          <label class="check">
+            <input type="checkbox" name="one_question_per_page" value="1" {{ 'checked' if exam.one_question_per_page }}>
+            <span>One question at a time</span></label>
+        </div>
+        <div>
+          <label class="check">
+            <input type="checkbox" name="show_score" value="1" {{ 'checked' if exam.show_score }}>
+            <span>Show the score on submitting</span></label>
+          <label class="check">
+            <input type="checkbox" name="show_answers" value="1" {{ 'checked' if exam.show_answers }}>
+            <span>Show the correct answers</span></label>
+        </div>
+      </div>
+
+      <button type="submit" class="button button-primary">Save settings</button>
+    </form>
+  </div>
+</details>
+
+<details class="panel">
+  <summary>Copy or delete this examination</summary>
+  <div class="panel-body">
+    <div class="grid grid-2">
+      <form method="post" action="{{ url_for('exams.duplicate', exam_id=exam.id) }}">
+        <h4>Copy</h4>
+        <p class="small muted">
+          Every question, figure and sub-item is copied. Use this to reuse the
+          paper next term, or for a second section.
+        </p>
+        <div class="field">
+          <label for="dup_title">Title of the copy</label>
+          <input type="text" id="dup_title" name="title" value="{{ exam.title }} (copy)">
+        </div>
+        <div class="field">
+          <label for="target_course_id">Into which subject</label>
+          <select id="target_course_id" name="target_course_id">
+            {% for option in nav_courses %}
+              <option value="{{ option.id }}" {{ 'selected' if option.id == course.id }}>
+                {{ option.code }} — {{ option.term_label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="button">Make a copy</button>
+      </form>
+
+      <form method="post" action="{{ url_for('exams.delete', exam_id=exam.id) }}">
+        <h4>Delete</h4>
+        <p class="small muted">
+          The questions and every attempt go with it. Copying it somewhere
+          first is usually wiser.
+        </p>
+        <div class="field">
+          <label for="confirm">Type DELETE to confirm</label>
+          <input type="text" id="confirm" name="confirm" class="mono" placeholder="DELETE">
+        </div>
+        <button type="submit" class="button button-danger">Delete this examination</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endblock %}

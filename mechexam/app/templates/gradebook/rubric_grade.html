@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Mark {{ item.title }} · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  <a href="{{ url_for('gradebook.item', item_id=item.id) }}">{{ item.title }}</a><span>/</span>
+  Rubric marking
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ item.title }}</h1>
+    <p class="page-sub">
+      Marking against “{{ rubric.name }}” &middot;
+      {{ rubric.criteria|length }} criteria &middot;
+      {{ rubric.total_points|num }} points
+      {%- if item.max_points != rubric.total_points %}
+        &middot; recorded out of {{ item.max_points|num }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('gradebook.item', item_id=item.id) }}">All the marks</a>
+  </div>
+</div>
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('rubrics.grade', item_id=item.id) }}">All sections</a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('rubrics.grade', item_id=item.id, section=section.id) }}">{{ section.name }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="grid grid-2">
+  <div>
+    {% if selected %}
+    <form method="post" data-total-group data-warn-unsaved>
+      <input type="hidden" name="student_id" value="{{ selected.id }}">
+      {% if next_id %}<input type="hidden" name="next_student_id" value="{{ next_id }}">{% endif %}
+
+      <div class="card">
+        <div class="card-head">
+          <div class="grow">
+            <h2 style="margin-bottom:0.1rem">{{ selected.name }}</h2>
+            <p class="page-sub mb0 mono">{{ selected.student_number or '' }}</p>
+          </div>
+          {% if existing.get(selected.id) %}
+            <span class="pill pill-pass">already marked</span>
+          {% endif %}
+        </div>
+
+        <div class="card-body">
+          {% if submissions.get(selected.id) %}
+          {% set submission = submissions[selected.id] %}
+          <div class="callout callout-info">
+            <span class="glyph" aria-hidden="true">&#128206;</span>
+            <div class="grow">
+              <p class="mb0">
+                Submitted
+                <a href="{{ url_for('student.submission_file', submission_id=submission.id) }}"
+                   target="_blank" rel="noopener">{{ submission.filename }}</a>
+                on {{ submission.submitted_at|dt }}
+                {%- if submission.drive_url %} &middot;
+                  <a href="{{ submission.drive_url }}" target="_blank" rel="noopener">in Drive</a>
+                {% endif %}
+              </p>
+            </div>
+          </div>
+          {% if submission.is_video %}
+            <video controls style="width:100%;max-height:360px;border-radius:var(--radius);margin-bottom:1rem">
+              <source src="{{ url_for('student.submission_file', submission_id=submission.id) }}"
+                      type="{{ submission.mime_type }}">
+            </video>
+          {% elif submission.is_image %}
+            <img src="{{ url_for('student.submission_file', submission_id=submission.id) }}"
+                 alt="Submission" style="border-radius:var(--radius);border:1px solid var(--line);margin-bottom:1rem">
+          {% endif %}
+          {% elif item.accepts_submission %}
+          <div class="callout callout-warning">
+            <span class="glyph" aria-hidden="true">&#9888;</span>
+            <div class="grow"><p class="mb0">Nothing submitted for this activity yet.</p></div>
+          </div>
+          {% endif %}
+
+          {% set row = existing.get(selected.id) %}
+          {% set saved = row.scores if row else {} %}
+
+          {% for criterion in rubric.criteria %}
+          <div class="rubric-criterion">
+            <div class="rubric-criterion-head">
+              <span class="title">{{ loop.index }}. {{ criterion.title }}</span>
+              <span class="small muted nowrap">out of {{ criterion.max_points|num }}</span>
+            </div>
+            {% if criterion.description %}
+              <p class="small muted mb1">{{ criterion.description }}</p>
+            {% endif %}
+
+            {% set current = saved.get(criterion.id|string) %}
+            {% set steps = (criterion.max_points|int) %}
+            {% if steps <= 20 %}
+            <div class="rubric-scale">
+              {% for value in range(0, steps + 1) %}
+              <label class="{{ 'picked' if current is not none and current|int == value }}">
+                <input type="radio" name="criterion_{{ criterion.id }}" value="{{ value }}"
+                       data-total-input max="{{ criterion.max_points|num }}"
+                       {{ 'checked' if current is not none and current|int == value }}>
+                <span>{{ value }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            {% else %}
+            <input type="number" name="criterion_{{ criterion.id }}" data-total-input
+                   step="0.5" min="0" max="{{ criterion.max_points|num }}"
+                   value="{{ current if current is not none else '' }}"
+                   style="max-width:8rem">
+            {% endif %}
+          </div>
+          {% endfor %}
+
+          <div class="field">
+            <label for="comment">Comment for the student</label>
+            <textarea id="comment" name="comment" rows="3">{{ row.comment if row else '' }}</textarea>
+            <p class="field-hint">
+              The student sees this, together with the score for each criterion.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="rubric-total">
+        <div class="grow">
+          <div class="tiny" style="opacity:0.8;text-transform:uppercase;letter-spacing:0.07em">
+            Running total
+          </div>
+          <div>
+            <span class="figure" data-total-output>0</span>
+            <span style="opacity:0.8"> of {{ rubric.total_points|num }}</span>
+            <span style="opacity:0.8"> &middot; <span data-total-percent>—</span></span>
+          </div>
+        </div>
+        <button type="submit" class="button button-gold">
+          {{ 'Save and go to the next student' if next_id else 'Save' }}
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="card">
+      <div class="card-body">
+        <div class="empty">
+          <span class="glyph" aria-hidden="true">&#9823;</span>
+          <p>No students in this {{ 'section' if section_id else 'subject' }}.</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head">
+        <h3 class="grow">The class</h3>
+        <span class="small muted">{{ existing|length }} of {{ students|length }} marked</span>
+      </div>
+      <div class="card-body flush">
+        <div class="table-wrap scroll-y">
+          <table class="data table-compact">
+            <thead><tr><th>Student</th><th class="num">Total</th><th></th></tr></thead>
+            <tbody>
+              {% for student in students %}
+              {% set row = existing.get(student.id) %}
+              <tr class="{{ 'row-muted' if selected and student.id == selected.id }}">
+                <td>
+                  {{ student.name }}
+                  {% if selected and student.id == selected.id %}
+                    <span class="pill pill-info tiny">marking now</span>
+                  {% endif %}
+                </td>
+                <td class="num">
+                  {% if row %}{{ row.total|num }} / {{ rubric.total_points|num }}
+                  {% else %}<span class="muted">—</span>{% endif %}
+                </td>
+                <td class="right">
+                  <a class="button button-small"
+                     href="{{ url_for('rubrics.grade', item_id=item.id, section=section_id, student=student.id) }}">
+                    {{ 'Change' if row else 'Mark' }}
+                  </a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card-foot">
+        <p class="small muted mb0">
+          {% if item.max_points != rubric.total_points %}
+            The rubric total is rescaled from {{ rubric.total_points|num }} to
+            this activity's maximum of {{ item.max_points|num }} when the mark
+            is recorded.
+          {% else %}
+            The rubric total is recorded as the mark for this activity.
+          {% endif %}
+          A mark you have locked by hand in the gradebook is never overwritten.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

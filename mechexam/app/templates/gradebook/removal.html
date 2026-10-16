@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Removal examination · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.index') }}">Gradebook</a><span>/</span>
+  <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  Removal examination
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Removal examination — {{ course.code }}</h1>
+    <p class="page-sub">
+      Candidates are those whose computed standing falls between
+      {{ course.removal_low|pct }}% and {{ course.removal_high|pct }}%.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h3>How this works</h3>
+    <ul class="small mb0">
+      <li>
+        Candidacy is decided from the <strong>final computed standing</strong>,
+        so this page is only meaningful once the term's marks are in.
+      </li>
+      <li>
+        A candidate who <strong>passes the removal examination gets exactly
+        3.00</strong> — the mark is not transmuted.
+      </li>
+      <li>
+        Holding a removal examination <strong>adjusts everyone who already
+        passed one grade step higher</strong>: 2.50 becomes 2.25, 1.25 becomes
+        1.00, and so on.
+      </li>
+      <li>
+        None of it takes effect until you <strong>finalise the subject</strong>,
+        and finalising can be undone.
+      </li>
+    </ul>
+  </div>
+</div>
+
+{% if not item %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Create the removal examination</h2></div>
+  <div class="card-body">
+    <p class="small">
+      This adds a separate activity to hold the removal marks. It carries no
+      weight of its own — it decides the outcome for candidates rather than
+      being averaged in.
+    </p>
+    <form method="post">
+      <input type="hidden" name="action" value="create">
+      <div class="field-row">
+        <div class="field">
+          <label for="scope">Belongs under</label>
+          <select id="scope" name="scope">
+            {% for value, label in scopes %}
+              {% if value == 'lecture' or course.has_laboratory %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="max_points">Highest possible score</label>
+          <input type="number" id="max_points" name="max_points" step="1" min="1" value="100">
+        </div>
+      </div>
+      <button type="submit" class="button button-primary">Create it</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Candidates</h2>
+    <span class="pill pill-removal">{{ candidates|length }}</span>
+  </div>
+  <div class="card-body {{ 'flush' if candidates }}">
+    {% if candidates %}
+      {% if item %}
+      <form method="post">
+        <input type="hidden" name="action" value="save">
+        <div class="table-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>Student</th><th class="num">Standing</th><th class="mid">Grade now</th>
+                <th class="num">Removal score</th><th class="num">%</th><th class="mid">Outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for result in candidates %}
+              {% set row = scores.get(result.student.id) %}
+              <tr>
+                <td>
+                  {{ result.student.name }}
+                  <div class="tiny muted mono">{{ result.student.student_number or '' }}</div>
+                </td>
+                <td class="num">{{ result.final_display }}%</td>
+                <td class="mid"><span class="grade grade-fail">{{ result.grade }}</span></td>
+                <td class="num">
+                  <input type="number" class="cell-input" name="score_{{ result.student.id }}"
+                         step="0.5" min="0" max="{{ item.max_points|num }}"
+                         value="{{ row.points|num if row and row.points is not none else '' }}"
+                         aria-label="Removal score for {{ result.student.name }}">
+                  <div class="tiny muted">of {{ item.max_points|num }}</div>
+                </td>
+                <td class="num small">
+                  {% if row and row.points is not none and item.max_points %}
+                    {{ (row.points / item.max_points * 100)|pct }}
+                  {% else %}—{% endif %}
+                </td>
+                <td class="mid">
+                  {% if row and row.points is not none and item.max_points %}
+                    {% set percent = row.points / item.max_points * 100 %}
+                    {% if percent >= pass_mark %}
+                      <span class="pill pill-pass">will get 3.00</span>
+                    {% else %}
+                      <span class="pill pill-fail">will get 5.00</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="pill">no mark yet</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="card-foot flex">
+          <span class="grow small muted">
+            Passing is {{ pass_mark|pct }}% of {{ item.max_points|num }}.
+            A candidate with no mark recorded keeps the failing grade.
+          </span>
+          <button type="submit" class="button button-primary">Save the removal marks</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Student</th><th class="num">Standing</th><th class="mid">Grade now</th></tr></thead>
+          <tbody>
+            {% for result in candidates %}
+            <tr>
+              <td>{{ result.student.name }}
+                <div class="tiny muted mono">{{ result.student.student_number or '' }}</div></td>
+              <td class="num">{{ result.final_display }}%</td>
+              <td class="mid"><span class="grade grade-fail">{{ result.grade }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#10003;</span>
+        <p>
+          Nobody falls in the removal band at the moment. Either every student
+          has passed, or those who have not are below
+          {{ course.removal_low|pct }}%.
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if item and would_bump %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Students who will be adjusted</h2>
+    <span class="pill pill-info">{{ would_bump|length }}</span>
+  </div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead><tr><th>Student</th><th class="num">Standing</th>
+          <th class="mid">Grade now</th><th class="mid">Becomes</th></tr></thead>
+        <tbody>
+          {% for result in would_bump %}
+          <tr>
+            <td>{{ result.student.name }}</td>
+            <td class="num">{{ result.final_display }}%</td>
+            <td class="mid"><span class="grade">{{ result.grade }}</span></td>
+            {% set after = bump_one_step(result.grade) %}
+            <td class="mid">
+              <span class="grade grade-pass">{{ after }}</span>
+              {% if after == result.grade %}
+                <div class="tiny muted">already at the top</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-foot">
+    <p class="small muted mb0">
+      Because a removal examination is being held, students who already passed
+      move one grade step higher when the subject is finalised. A student
+      already at 1.00 stays there. The
+      <a href="{{ url_for('gradebook.finalise', course_id=course.id) }}">finalise page</a>
+      shows exactly what each grade will become before you commit to it.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% if item %}
+<div class="button-row mb2">
+  <a class="button button-primary" href="{{ url_for('gradebook.finalise', course_id=course.id) }}">
+    Go on to finalise the grades
+  </a>
+  <form class="inline-form" method="post"
+        data-confirm="Remove the removal examination and its marks?">
+    <input type="hidden" name="action" value="delete">
+    <button type="submit" class="button button-danger">Remove the removal examination</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

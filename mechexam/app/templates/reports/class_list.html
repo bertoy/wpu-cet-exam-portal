@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Class list · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="page-head">
+    <div class="grow">
+      <h1>Class list for printing</h1>
+      <p class="page-sub">
+        Blank columns are included for taking attendance or recording marks by
+        hand.
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('courses.class_list', course_id=course.id, section=section.id if section else none) }}">
+        Back
+      </a>
+      {% for n in [0, 6, 12] %}
+        <a class="button {{ 'button-gold' if columns == n }}"
+           href="{{ url_for('reports.class_list_print', course_id=course.id,
+                            section=section.id if section else none, columns=n) }}">
+          {{ 'no blank columns' if n == 0 else n ~ ' blank columns' }}
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="sheet">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">Class List</p>
+  </div>
+
+  <table style="width:100%;margin-bottom:0.6rem;font-size:0.85rem">
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Section:</strong> {{ section.name if section else 'All sections' }}</td>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+    </tr>
+    <tr>
+      <td><strong>Instructor:</strong> {{ course.owner.display_name if course.owner else '' }}</td>
+      <td><strong>Schedule:</strong> {{ section.schedule if section and section.schedule else '' }}</td>
+      <td><strong>Room:</strong> {{ section.room if section and section.room else '' }}</td>
+    </tr>
+  </table>
+
+  <table class="data">
+    <thead>
+      <tr>
+        <th style="width:2.5rem">No.</th>
+        <th>Student Number</th>
+        <th>Name of Student</th>
+        <th>Programme</th>
+        {% for n in range(columns) %}
+          <th class="mid" style="width:2rem">&nbsp;</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for student in students %}
+      <tr>
+        <td class="mid">{{ loop.index }}</td>
+        <td class="mono">{{ student.student_number or '' }}</td>
+        <td>{{ student.name }}</td>
+        <td>{{ student.program or '' }}</td>
+        {% for n in range(columns) %}<td>&nbsp;</td>{% endfor %}
+      </tr>
+      {% endfor %}
+      {# A few blank rows for late enrolments. #}
+      {% for n in range(3) %}
+      <tr>
+        <td class="mid">{{ students|length + loop.index }}</td>
+        <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
+        {% for m in range(columns) %}<td>&nbsp;</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p style="font-size:0.8rem;margin-top:0.6rem">
+    <strong>Total enrolled: {{ students|length }}</strong>
+  </p>
+
+  <div class="signatures">
+    <div class="signature">
+      <div class="rule">{{ course.owner.display_name if course.owner else '' }}</div>
+      <div class="role">Instructor</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Program Chair</div>
+    </div>
+    <div class="signature">
+      <div class="rule">&nbsp;</div>
+      <div class="role">Dean</div>
+    </div>
+  </div>
+
+  <p style="font-size:0.72rem;margin-top:1rem;color:#555">
+    Printed {{ printed_on.strftime('%d %B %Y at %I:%M %p') }}
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ bank.name }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.banks') }}">Question banks</a><span>/</span>{{ bank.name }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ bank.name }}</h1>
+    <p class="page-sub">
+      {{ course.code }} &middot; {{ questions|length }} question{{ '' if questions|length == 1 else 's' }}
+      {%- if topics %} &middot; topics: {{ topics|join(', ') }}{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if bank.description %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow"><p class="mb0">{{ bank.description }}</p></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Questions in the bank</h2>
+    <div style="max-width:16rem">
+      <input type="search" data-filter-target=".bank-question" placeholder="Search the bank">
+    </div>
+  </div>
+  <div class="card-body">
+    {% if questions %}
+      {% for question in questions %}
+      <div class="question bank-question"
+           data-search="{{ question.text }} {{ question.topic or '' }} {{ question.qtype }}">
+        <div class="question-head">
+          <span class="question-number">{{ loop.index }}</span>
+          <span class="pill">{{ question.type_label }}</span>
+          {% if question.topic %}<span class="pill pill-info tiny">{{ question.topic }}</span>{% endif %}
+          <span class="pill tiny">{{ question.difficulty }}</span>
+          <span class="question-points">{{ question.effective_points|num }} pt{{ '' if question.effective_points == 1 else 's' }}</span>
+        </div>
+        <div class="question-body">
+          <div class="question-text" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+          {% if question.qtype in ('mcq', 'truefalse') %}
+            {% for option in question.options %}
+            <div class="option {{ 'correct' if option == question.answer }}">
+              <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+              <span data-math data-math-source="{{ option }}">{{ option }}</span>
+            </div>
+            {% endfor %}
+          {% elif question.qtype in ('numeric', 'short') %}
+            <p class="small mb0">Key: <strong class="mono">{{ question.answer }}</strong>
+              {%- if question.unit %} {{ question.unit }}{% endif %}
+              {%- if question.tolerance_percent %} &middot; ±{{ question.tolerance_percent|num }}%{% endif %}</p>
+          {% elif question.qtype == 'matching' %}
+            <p class="small mb0">{{ question.pairs|length }} pairs.</p>
+          {% elif question.qtype == 'multipart' %}
+            <p class="small mb0">{{ question.parts|length }} sub-item(s).</p>
+          {% endif %}
+
+          <details class="panel mt1">
+            <summary>Edit</summary>
+            <div class="panel-body">
+              {% with action = url_for('exams.question_edit', question_id=question.id) %}
+                {% include "partials/question_form.html" %}
+              {% endwith %}
+            </div>
+          </details>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true">&#9783;</span>
+        <p>The bank is empty. Add the first question below.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Add a question to the bank</h2></div>
+  <div class="card-body">
+    {% with action = url_for('exams.bank_question_add', bank_id=bank.id), question = none %}
+      {% include "partials/question_form.html" %}
+    {% endwith %}
+  </div>
+</div>
+{% endblock %}

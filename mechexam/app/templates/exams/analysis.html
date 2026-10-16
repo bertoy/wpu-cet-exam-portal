@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Item analysis · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('exams.results', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>
+  Item analysis
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Item analysis</h1>
+    <p class="page-sub">
+      Based on {{ sample }} submitted attempt{{ '' if sample == 1 else 's' }}.
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('exams.results', exam_id=exam.id) }}">Back to results</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h3>How to read this</h3>
+    <p class="small mb1">
+      <strong>Difficulty</strong> is the share of students who got the item
+      right: 0.85 means 85% did. An item above 0.90 is very easy; below 0.25
+      it is very hard, and worth checking that the wording and the answer key
+      are correct.
+    </p>
+    <p class="small mb0">
+      <strong>Discrimination</strong> compares the top third of the class with
+      the bottom third. Above 0.30 means the item separates those who know the
+      material from those who do not. Near zero means it tells you little. A
+      <em>negative</em> figure means the weaker students did better than the
+      stronger ones, which almost always points to a wrong key or a misleading
+      question.
+      {% if not grouped %}
+        With fewer than six attempts the thirds are too small to be
+        meaningful, so discrimination is left blank.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Every item</h2></div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th style="width:2.5rem">#</th><th>Question</th><th>Type</th>
+            <th class="num">Answered</th><th class="num">Difficulty</th>
+            <th class="num">Discrimination</th><th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="small muted">{{ loop.index }}</td>
+            <td class="small">
+              <span data-math data-math-source="{{ row.question.text|truncate(110) }}">{{ row.question.text|truncate(110) }}</span>
+              {% if row.question.topic %}<div class="tiny muted">{{ row.question.topic }}</div>{% endif %}
+            </td>
+            <td class="tiny">{{ row.question.type_label }}</td>
+            <td class="num">{{ row.answered }}</td>
+            <td class="num">
+              {% if row.difficulty is not none %}
+                <strong>{{ '%.2f'|format(row.difficulty) }}</strong>
+                <div class="bar-track" style="height:0.4rem;margin-top:0.2rem">
+                  <div class="bar-fill {{ 'fail' if row.difficulty < 0.25 else ('pass' if row.difficulty > 0.9 else '') }}"
+                       style="width:{{ (row.difficulty * 100)|round }}%"></div>
+                </div>
+              {% else %}—{% endif %}
+            </td>
+            <td class="num">
+              {% if row.discrimination is not none %}
+                <strong class="{{ 'grade-fail' if row.discrimination < 0 else ('grade-pass' if row.discrimination >= 0.3 else 'grade-removal') }}">
+                  {{ '%.2f'|format(row.discrimination) }}
+                </strong>
+              {% else %}—{% endif %}
+            </td>
+            <td class="small">{{ row.verdict }}</td>
+          </tr>
+          {% if row.distractors %}
+          <tr>
+            <td></td>
+            <td colspan="6" class="tiny">
+              <span class="muted">What was chosen:</span>
+              {% for answer, count in row.distractors.items() %}
+                <span class="pill {{ 'pill-pass' if answer == row.question.answer else '' }}">
+                  {{ answer|truncate(34) }} — {{ count }}
+                </span>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if sample < 6 %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      With so few attempts these figures move a great deal with each new
+      submission. They become worth acting on once most of the class has sat
+      the exam.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

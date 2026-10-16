@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('courses.index') }}">My subjects</a><span>/</span>{{ course.code }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ course.code }} — {{ course.title }}</h1>
+    <p class="page-sub">
+      {{ course.term_label }} &middot; {{ course.units|num }} unit{{ '' if course.units == 1 else 's' }}
+      {%- if course.has_laboratory %} &middot; lecture and laboratory{% endif %}
+      {%- if course.owner %} &middot; {{ course.owner.display_name }}{% endif %}
+    </p>
+  </div>
+  <div class="button-row">
+    {% if course.is_finalised %}<span class="pill pill-info">finalised</span>{% endif %}
+    <span class="pill {{ 'pill-pass' if course.grades_released else 'pill-closed' }}">
+      {{ 'grades visible to students' if course.grades_released else 'grades hidden' }}
+    </span>
+  </div>
+</div>
+
+<div class="button-row mb2">
+  <a class="button button-primary" href="{{ url_for('gradebook.course', course_id=course.id) }}">Gradebook</a>
+  <a class="button" href="{{ url_for('exams.create', course=course.id) }}">New examination</a>
+  <a class="button" href="{{ url_for('courses.enrol', course_id=course.id) }}">Enrol students</a>
+  <a class="button" href="{{ url_for('courses.class_list', course_id=course.id) }}">Class list</a>
+  <a class="button" href="{{ url_for('courses.attendance', course_id=course.id) }}">Attendance</a>
+  <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">Grade sheet</a>
+  <a class="button" href="{{ url_for('reports.summary', course_id=course.id) }}">Summary</a>
+  <a class="button" href="{{ url_for('messages.compose', course=course.id, kind='announcement') }}">Announce</a>
+  <form class="inline-form" method="post" action="{{ url_for('courses.release_grades', course_id=course.id) }}">
+    <button type="submit" class="button {{ 'button-gold' if not course.grades_released }}">
+      {{ 'Hide grades from students' if course.grades_released else 'Show grades to students' }}
+    </button>
+  </form>
+</div>
+
+{% if sections %}
+<div class="section-tabs">
+  <a class="section-tab {{ 'active' if not section_id }}"
+     href="{{ url_for('courses.detail', course_id=course.id) }}">
+    All sections <span class="tiny">({{ students|length if not section_id else '' }})</span>
+  </a>
+  {% for section in sections %}
+    <a class="section-tab {{ 'active' if section_id == section.id }}"
+       href="{{ url_for('courses.detail', course_id=course.id, section=section.id) }}">
+      {{ section.name }} <span class="tiny">({{ section.headcount }})</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------ roster #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Class list
+      <span class="muted small">— {{ students|length }} student{{ '' if students|length == 1 else 's' }}</span>
+    </h2>
+    <a class="button button-small" href="{{ url_for('courses.enrol', course_id=course.id, section=section_id) }}">
+      Enrol students
+    </a>
+  </div>
+  <div class="card-body flush">
+    {% if students %}
+    <div class="table-wrap scroll-y">
+      <table class="data">
+        <thead>
+          <tr><th>#</th><th>Student number</th><th>Name</th><th>Section</th><th>Programme</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for student in students %}
+          <tr>
+            <td class="small muted">{{ loop.index }}</td>
+            <td class="mono small">{{ student.student_number or '—' }}</td>
+            <td>{{ student.name }}</td>
+            <td class="small">{{ student_sections.get(student.id) or '—' }}</td>
+            <td class="small">{{ student.program or '—' }}</td>
+            <td class="right nowrap">
+              <a class="button button-small"
+                 href="{{ url_for('gradebook.student_detail', course_id=course.id, student_id=student.id) }}">Grades</a>
+              <a class="button button-small"
+                 href="{{ url_for('messages.compose', student=student.id, course=course.id, kind='private') }}">Message</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9823;</span>
+      <p>No students in this {{ 'section' if section_id else 'subject' }} yet.</p>
+      <a class="button button-primary" href="{{ url_for('courses.enrol', course_id=course.id, section=section_id) }}">
+        Enrol students
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if dropped %}
+<details class="panel">
+  <summary>Dropped students <span class="tail">{{ dropped|length }}</span></summary>
+  <div class="panel-body">
+    <p class="small muted">
+      Their recorded marks are kept, and they can be put back in the class list
+      at any time.
+    </p>
+    <table class="data table-compact">
+      <thead><tr><th>Student</th><th>Section</th><th>Note</th><th>Dropped</th><th></th></tr></thead>
+      <tbody>
+        {% for row in dropped %}
+        <tr>
+          <td>{{ row.student.name }}</td>
+          <td class="small">{{ row.section.name if row.section else '—' }}</td>
+          <td class="small">{{ row.drop_note or '—' }}</td>
+          <td class="tiny nowrap">{{ row.dropped_at|d }}</td>
+          <td class="right">
+            <form class="inline-form" method="post"
+                  action="{{ url_for('courses.enrolment_change', course_id=course.id, enrollment_id=row.id) }}">
+              <input type="hidden" name="action" value="reinstate">
+              <button type="submit" class="button button-small">Reinstate</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{# ---------------------------------------------------- grading activities #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Grading activities</h2>
+    <a class="button button-small" href="{{ url_for('gradebook.course', course_id=course.id) }}">
+      Open the gradebook
+    </a>
+  </div>
+  <div class="card-body">
+    {% for scope, label, components in [('lecture', 'Lecture', lecture_components),
+                                        ('laboratory', 'Laboratory', laboratory_components)] %}
+      {% if components %}
+      <h3 class="mt1">{{ label }}</h3>
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead>
+            <tr>
+              <th>Component</th><th class="num">Weight</th><th>Activity</th>
+              <th class="num">Highest</th><th class="num">×</th><th>Given</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for component in components %}
+              {% if component.items %}
+                {% for item in component.items %}
+                <tr>
+                  {% if loop.first %}
+                    <td rowspan="{{ component.items|length }}"><strong>{{ component.name }}</strong></td>
+                    <td rowspan="{{ component.items|length }}" class="num">{{ component.weight_percent|num }}%</td>
+                  {% endif %}
+                  <td class="small">
+                    <a href="{{ url_for('gradebook.item', item_id=item.id) }}">{{ item.title }}</a>
+                    <span class="pill tiny">{{ item.type_label }}</span>
+                    {% if item.rubric_id %}<span class="pill pill-info tiny">rubric</span>{% endif %}
+                    {% if item.accepts_submission %}<span class="pill pill-gold tiny">upload</span>{% endif %}
+                    {% if not item.is_published %}<span class="pill tiny">hidden</span>{% endif %}
+                  </td>
+                  <td class="num">{{ item.max_points|num }}</td>
+                  <td class="num">{{ item.weight_multiplier|num }}</td>
+                  <td class="tiny nowrap">{{ item.date_given|d if item.date_given else '—' }}</td>
+                  <td class="right nowrap">
+                    <a class="button button-small" href="{{ url_for('gradebook.item', item_id=item.id) }}">Marks</a>
+                    {% if item.rubric_id %}
+                      <a class="button button-small" href="{{ url_for('rubrics.grade', item_id=item.id) }}">Rubric</a>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td><strong>{{ component.name }}</strong></td>
+                  <td class="num">{{ component.weight_percent|num }}%</td>
+                  <td colspan="5" class="muted small">No activities yet.</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+{# -------------------------------------------- add an activity (incl. tasks) #}
+<div class="card" id="add-activity">
+  <div class="card-head"><h2 class="grow">Add an activity</h2></div>
+  <div class="card-body">
+    <p class="small muted">
+      Quizzes, performance tasks, reports and major examinations are all added
+      here — there is no need to go through the gradebook first.
+    </p>
+    <form method="post" action="{{ url_for('courses.item_add', course_id=course.id) }}">
+      <div class="field-row">
+        <div class="field">
+          <label for="component_id">Goes under</label>
+          <select id="component_id" name="component_id" required>
+            {% for component in lecture_components %}
+              <option value="{{ component.id }}">Lecture — {{ component.name }} ({{ component.weight_percent|num }}%)</option>
+            {% endfor %}
+            {% for component in laboratory_components %}
+              <option value="{{ component.id }}">Laboratory — {{ component.name }} ({{ component.weight_percent|num }}%)</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="item_type">Kind of activity</label>
+          <select id="item_type" name="item_type">
+            {% for value, label in item_types %}
+              <option value="{{ value }}" {{ 'selected' if value == 'task' }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" required
+               placeholder="Video presentation — Rankine cycle">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="max_points">Highest possible score</label>
+          <input type="number" id="max_points" name="max_points" step="0.5" min="0.5"
+                 value="50" required>
+        </div>
+        <div class="field">
+          <label for="weight_multiplier">Counts as</label>
+          <input type="number" id="weight_multiplier" name="weight_multiplier"
+                 step="0.5" min="0" value="1">
+          <p class="field-hint">2 makes it count twice within its component.</p>
+        </div>
+        <div class="field">
+          <label for="date_given">Date given</label>
+          <input type="date" id="date_given" name="date_given">
+        </div>
+        {% if sections %}
+        <div class="field">
+          <label for="item_section">Only for section</label>
+          <select id="item_section" name="section_id">
+            <option value="">All sections</option>
+            {% for section in sections %}
+              <option value="{{ section.id }}" {{ 'selected' if section_id == section.id }}>{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="rubric_id">Mark with a rubric</label>
+        <select id="rubric_id" name="rubric_id">
+          <option value="">No rubric — enter a score directly</option>
+          {% for rubric in rubrics %}
+            <option value="{{ rubric.id }}">
+              {{ rubric.name }}{% if rubric.is_template %} (template — a copy is made){% endif %}
+              — {{ rubric.criteria|length }} criteria, {{ rubric.total_points|num }} points
+            </option>
+          {% endfor %}
+        </select>
+        <p class="field-hint">
+          Templates for video presentations, technical reports, laboratory
+          reports, oral reporting and essays are ready to use at 10 points per
+          criterion.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="instructions">Instructions for the students</label>
+        <textarea id="instructions" name="instructions" rows="2"></textarea>
+      </div>
+
+      <fieldset>
+        <legend>File submission</legend>
+        <label class="check">
+          <input type="checkbox" name="accepts_submission" value="1">
+          <span>Students upload a file for this activity
+            <span class="check-note">The file is stored on this server, and copied
+              into your Drive folder at once if one is set below.</span></span>
+        </label>
+        <div class="field">
+          <label for="drive_folder_url">Your Google Drive folder link</label>
+          <input type="url" id="drive_folder_url" name="drive_folder_url"
+                 placeholder="https://drive.google.com/drive/folders/…">
+          <p class="field-hint">
+            Share the folder with the service account as an Editor. Uploads land
+            there automatically — nobody has to drag anything.
+          </p>
+        </div>
+      </fieldset>
+
+      <button type="submit" class="button button-primary">Add activity</button>
+    </form>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------- exams #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Examinations</h2>
+    <a class="button button-small button-primary" href="{{ url_for('exams.create', course=course.id) }}">
+      New examination
+    </a>
+  </div>
+  <div class="card-body {{ 'flush' if exams }}">
+    {% if exams %}
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Title</th><th>Kind</th><th class="num">Items</th><th class="num">Points</th>
+            <th class="mid">PIN</th><th class="mid">State</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for exam in exams %}
+          <tr>
+            <td>
+              <a href="{{ url_for('exams.edit', exam_id=exam.id) }}"><strong>{{ exam.title }}</strong></a>
+              {% if exam.section %}<div class="tiny muted">section {{ exam.section.name }}</div>{% endif %}
+            </td>
+            <td class="small">{{ exam.category }}</td>
+            <td class="num">{{ exam.questions|length }}</td>
+            <td class="num">{{ exam.total_points|num }}</td>
+            <td class="mid mono tiny">{{ exam.access_code }}</td>
+            <td class="mid">
+              {% if exam.is_open and not exam.is_expired %}
+                <span class="pill pill-open">open</span>
+                <div class="tiny">{{ exam.seconds_remaining|mmss }} left</div>
+              {% elif exam.closed_at %}
+                <span class="pill pill-closed">closed</span>
+              {% else %}
+                <span class="pill">not opened</span>
+              {% endif %}
+            </td>
+            <td class="right nowrap">
+              <a class="button button-small" href="{{ url_for('exams.edit', exam_id=exam.id) }}">Edit</a>
+              {% if exam.is_open %}
+                <a class="button button-small" href="{{ url_for('exams.monitor', exam_id=exam.id) }}">Monitor</a>
+              {% else %}
+                <a class="button button-small" href="{{ url_for('exams.results', exam_id=exam.id) }}">Results</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9998;</span>
+      <p>No examinations in this subject yet.</p>
+      <a class="button button-primary" href="{{ url_for('exams.create', course=course.id) }}">
+        Create the first one
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------- sections & import #}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Sections</h2></div>
+    <div class="card-body">
+      {% if sections %}
+      <div class="table-wrap">
+        <table class="data table-compact">
+          <thead><tr><th>Name</th><th>Schedule</th><th>Room</th><th class="num">In it</th><th></th></tr></thead>
+          <tbody>
+            {% for section in sections %}
+            <tr>
+              <td><strong>{{ section.name }}</strong></td>
+              <td class="small">{{ section.schedule or '—' }}</td>
+              <td class="small">{{ section.room or '—' }}</td>
+              <td class="num">{{ section.headcount }}</td>
+              <td class="right">
+                <form class="inline-form" method="post"
+                      action="{{ url_for('courses.section_edit', course_id=course.id, section_id=section.id) }}"
+                      data-confirm="Remove section {{ section.name }}?">
+                  <input type="hidden" name="action" value="delete">
+                  <button type="submit" class="button button-small">Remove</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="small muted">
+        No sections yet. A subject can run without them, but adding sections
+        lets you keep separate class lists and open an exam for one section
+        only.
+      </p>
+      {% endif %}
+
+      <h4 class="mt2">Add a section</h4>
+      <form method="post" action="{{ url_for('courses.section_add', course_id=course.id) }}">
+        <div class="field-row">
+          <div class="field">
+            <label for="section_name">Name</label>
+            <input type="text" id="section_name" name="name" placeholder="BSME 4-A" required>
+          </div>
+          <div class="field">
+            <label for="section_schedule">Schedule</label>
+            <input type="text" id="section_schedule" name="schedule" placeholder="MWF 7:30–9:00">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="section_room">Room</label>
+            <input type="text" id="section_room" name="room" placeholder="ENG 201">
+          </div>
+          <div class="field">
+            <label for="section_capacity">Capacity</label>
+            <input type="number" id="section_capacity" name="capacity" min="0" value="40">
+          </div>
+        </div>
+        <button type="submit" class="button">Add section</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Import a class list</h2></div>
+    <div class="card-body">
+      <p class="small">
+        Paste the list, or choose a CSV. Accounts are created for anyone new,
+        and everyone is enrolled into the section you pick.
+      </p>
+      <form method="post" action="{{ url_for('courses.import_students', course_id=course.id) }}"
+            enctype="multipart/form-data">
+        {% if sections %}
+        <div class="field">
+          <label for="import_section">Into section</label>
+          <select id="import_section" name="section_id" required>
+            {% for section in sections %}
+              <option value="{{ section.id }}" {{ 'selected' if section_id == section.id }}>{{ section.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="field">
+          <label for="pasted">Paste the list</label>
+          <textarea id="pasted" name="pasted" rows="6" spellcheck="false"
+placeholder="2023-0001, Dela Cruz, Juan P., BSME, 4th Year
+2023-0002, Santos, Maria L., BSME, 4th Year"></textarea>
+          <p class="field-hint">
+            Student number, then the full name, then optionally the programme
+            and year level. A header row is skipped.
+          </p>
+        </div>
+        <div class="field">
+          <label for="csv_file">…or choose a CSV file</label>
+          <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv">
+        </div>
+        <div class="field">
+          <label for="default_password">First password for new accounts</label>
+          <input type="text" id="default_password" name="default_password"
+                 placeholder="Leave blank to use the student number">
+        </div>
+        <button type="submit" class="button button-primary">Import</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- settings #}
+<details class="panel">
+  <summary>Subject settings and grading weights</summary>
+  <div class="panel-body">
+    <div class="grid grid-2">
+      <form method="post" action="{{ url_for('courses.settings', course_id=course.id) }}">
+        <h4>Subject</h4>
+        <div class="field">
+          <label for="course_title">Descriptive title</label>
+          <input type="text" id="course_title" name="title" value="{{ course.title }}">
+        </div>
+        <div class="field">
+          <label for="course_description">Description</label>
+          <textarea id="course_description" name="description" rows="2">{{ course.description or '' }}</textarea>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="units">Units</label>
+            <input type="number" id="units" name="units" step="0.5" min="0" value="{{ course.units|num }}">
+          </div>
+          <div class="field">
+            <label for="lec_units">Lecture units</label>
+            <input type="number" id="lec_units" name="lec_units" step="0.5" min="0" value="{{ course.lec_units|num }}">
+          </div>
+          <div class="field">
+            <label for="lab_units">Laboratory units</label>
+            <input type="number" id="lab_units" name="lab_units" step="0.5" min="0" value="{{ course.lab_units|num }}">
+          </div>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="has_laboratory" value="1" {{ 'checked' if course.has_laboratory }}>
+          <span>This subject has a laboratory
+            <span class="check-note">Adds the laboratory components and splits the
+              final grade between lecture and laboratory.</span></span>
+        </label>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="lecture_share">Lecture share (%)</label>
+            <input type="number" id="lecture_share" name="lecture_share" step="1" min="0" max="100"
+                   value="{{ course.lecture_share|num }}">
+          </div>
+          <div class="field">
+            <label for="laboratory_share">Laboratory share (%)</label>
+            <input type="number" id="laboratory_share" name="laboratory_share" step="1" min="0" max="100"
+                   value="{{ course.laboratory_share|num }}">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="averaging_method">How each component is averaged</label>
+          <select id="averaging_method" name="averaging_method">
+            <option value="total_points" {{ 'selected' if course.averaging_method == 'total_points' }}>
+              Total points ÷ total possible (the college sheet)
+            </option>
+            <option value="item_average" {{ 'selected' if course.averaging_method == 'item_average' }}>
+              Average of each activity's own percentage
+            </option>
+          </select>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="removal_low">Removal band — from (%)</label>
+            <input type="number" id="removal_low" name="removal_low" step="0.01" min="0" max="100"
+                   value="{{ course.removal_low|num }}">
+          </div>
+          <div class="field">
+            <label for="removal_high">Removal band — to (%)</label>
+            <input type="number" id="removal_high" name="removal_high" step="0.01" min="0" max="100"
+                   value="{{ course.removal_high|num }}">
+          </div>
+        </div>
+
+        <button type="submit" class="button button-primary">Save subject settings</button>
+      </form>
+
+      <form method="post" action="{{ url_for('courses.component_save', course_id=course.id) }}">
+        <h4>Component weights</h4>
+        <p class="small muted">
+          Each scope must total 100%. The college defaults are already set.
+        </p>
+        {% for scope, label, components in [('lecture', 'Lecture', lecture_components),
+                                            ('laboratory', 'Laboratory', laboratory_components)] %}
+          {% if components %}
+          <h5 class="mt1">{{ label }}</h5>
+          {% for component in components %}
+          <div class="field-row" style="align-items:flex-end">
+            <div class="field">
+              <label for="name_{{ component.id }}">Component</label>
+              <input type="text" id="name_{{ component.id }}" name="name_{{ component.id }}"
+                     value="{{ component.name }}">
+            </div>
+            <div class="field" style="flex:0 0 7rem">
+              <label for="weight_{{ component.id }}">Weight (%)</label>
+              <input type="number" id="weight_{{ component.id }}" name="weight_{{ component.id }}"
+                     step="0.5" min="0" max="100" value="{{ component.weight_percent|num }}">
+            </div>
+          </div>
+          {% endfor %}
+          <p class="tiny muted">
+            Total: {{ components|sum(attribute='weight_percent')|num }}%
+          </p>
+          {% endif %}
+        {% endfor %}
+        <button type="submit" class="button button-primary">Save weights</button>
+      </form>
+    </div>
+  </div>
+</details>
+{% endblock %}

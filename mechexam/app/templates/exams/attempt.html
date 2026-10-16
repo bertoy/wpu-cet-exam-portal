@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}{{ attempt.student.display_name }} · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('exams.results', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>
+  {{ attempt.student.display_name }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ attempt.student.display_name }}</h1>
+    <p class="page-sub">
+      {{ attempt.student.student_number or '' }}
+      &middot; {{ exam.title }} &middot; {{ exam.course.code }}
+    </p>
+  </div>
+  <div class="button-row">
+    <span class="pill {{ 'pill-pass' if attempt.is_submitted else 'pill-open' }}">
+      {{ 'submitted' if attempt.is_submitted else 'in progress' }}
+    </span>
+    {% if attempt.manual_pending %}
+      <span class="pill pill-removal">{{ attempt.manual_pending }} to mark</span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Score</div>
+    <div class="value">{{ attempt.effective_score|num }}</div>
+    <div class="note">of {{ attempt.total_points|num }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Per cent</div>
+    <div class="value">{{ attempt.percent|pct }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Started</div>
+    <div class="value" style="font-size:1.1rem">{{ attempt.started_at|dt('%I:%M %p') }}</div>
+    <div class="note">{{ attempt.started_at|d }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Submitted</div>
+    <div class="value" style="font-size:1.1rem">
+      {{ attempt.submitted_at|dt('%I:%M %p') if attempt.submitted_at else '—' }}
+    </div>
+    <div class="note">
+      {% if attempt.auto_submitted %}automatically — {{ attempt.submit_reason or 'see below' }}
+      {% elif attempt.submitted_at %}by the student{% else %}not yet{% endif %}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- the answers #}
+<form method="post" action="{{ url_for('exams.grade_essays', attempt_id=attempt.id) }}">
+  {% for question in exam.questions %}
+  {% set rows = answers.get(question.id, []) %}
+  <div class="question">
+    <div class="question-head">
+      <span class="question-number">{{ loop.index }}</span>
+      <span class="pill">{{ question.type_label }}</span>
+      <span class="question-points">{{ question.effective_points|num }} pt{{ '' if question.effective_points == 1 else 's' }}</span>
+    </div>
+    <div class="question-body">
+      <div class="question-text" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+      {% if question.figure_path %}
+      <figure class="question-figure">
+        <img src="{{ url_for('exams.figure', name=question.figure_path) }}" alt="{{ question.figure_caption or 'Figure' }}">
+        {% if question.figure_caption %}<figcaption>{{ question.figure_caption }}</figcaption>{% endif %}
+      </figure>
+      {% endif %}
+
+      {% if not rows %}
+        <p class="small muted mb0"><em>Not answered.</em></p>
+
+      {% elif question.qtype == 'multipart' %}
+        {% for part in question.parts %}
+          {% set row = rows|selectattr('sub_question_id', 'equalto', part.id)|first %}
+          <div class="subpart">
+            <span class="subpart-label">{{ part.label }})</span>
+            <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
+            <div class="small mt1">
+              Answered: <strong class="mono">{{ row.response or '—' if row else '—' }}</strong>
+              &middot; key <span class="mono">{{ part.answer }}</span>
+              {%- if part.unit %} {{ part.unit }}{% endif %}
+              {% if row %}
+                {% if row.is_correct %}<span class="pill pill-pass">correct</span>
+                {% else %}<span class="pill pill-fail">wrong</span>{% endif %}
+                <span class="subpart-points">{{ row.points_awarded|num }} / {{ part.points|num }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+      {% elif question.qtype == 'matching' %}
+        {% set row = rows|first %}
+        <table class="data table-compact">
+          <thead><tr><th>Item</th><th>Chose</th><th>Correct match</th><th class="mid"></th></tr></thead>
+          <tbody>
+            {% for line in matching_detail(row.response, question) %}
+            <tr>
+              <td>{{ line.left }}</td>
+              <td class="small">{{ line.chose or '—' }}</td>
+              <td class="small">{{ line.correct }}</td>
+              <td class="mid">
+                {% if line.is_correct %}<span class="pill pill-pass">&#10003;</span>
+                {% else %}<span class="pill pill-fail">&#10007;</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="small mb0">Awarded {{ row.points_awarded|num }} of {{ row.max_points|num }}.</p>
+
+      {% elif question.qtype == 'essay' %}
+        {% set row = rows|first %}
+        <div class="card" style="margin:0 0 0.8rem">
+          <div class="card-body tight">
+            <p class="mb0" style="white-space:pre-wrap">{{ row.response or '(left blank)' }}</p>
+          </div>
+        </div>
+        {% if question.rubric %}
+          <div class="button-row mb1">
+            <a class="button button-small button-primary"
+               href="{{ url_for('rubrics.grade_answer', answer_id=row.id) }}">
+              Mark against “{{ question.rubric.name }}”
+            </a>
+            <span class="small muted">
+              {{ question.rubric.criteria|length }} criteria,
+              {{ question.rubric.total_points|num }} points
+            </span>
+          </div>
+        {% endif %}
+        <div class="field-row">
+          <div class="field" style="flex:0 0 10rem">
+            <label for="points_{{ row.id }}">Points awarded</label>
+            <input type="number" id="points_{{ row.id }}" name="points_{{ row.id }}"
+                   step="0.5" min="0" max="{{ row.max_points|num }}"
+                   value="{{ row.points_awarded|num if not row.needs_manual else '' }}">
+            <p class="field-hint">out of {{ row.max_points|num }}</p>
+          </div>
+          <div class="field">
+            <label for="feedback_{{ row.id }}">Comment for the student</label>
+            <input type="text" id="feedback_{{ row.id }}" name="feedback_{{ row.id }}"
+                   value="{{ row.feedback or '' }}">
+          </div>
+        </div>
+        {% if row.needs_manual %}
+          <span class="pill pill-removal">waiting to be marked</span>
+        {% else %}
+          <span class="pill pill-pass">marked</span>
+          {% if row.graded_at %}<span class="tiny muted">{{ row.graded_at|dt }}</span>{% endif %}
+        {% endif %}
+
+      {% else %}
+        {% set row = rows|first %}
+        {% if question.qtype in ('mcq', 'truefalse') %}
+          {% for option in question.options %}
+          <div class="option {{ 'correct' if option == question.answer }}{{ ' wrong' if option == row.response and option != question.answer }}">
+            <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+            <span data-math data-math-source="{{ option }}">{{ option }}</span>
+            {% if option == row.response %}<span class="pill pill-info tiny">chose this</span>{% endif %}
+            {% if option == question.answer %}<span class="pill pill-pass tiny">key</span>{% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="small mb0">
+            Answered: <strong class="mono">{{ row.response or '—' }}</strong>
+            {%- if question.unit %} {{ question.unit }}{% endif %}
+            &middot; key <span class="mono">{{ question.answer }}</span>
+            {% if question.qtype == 'numeric' and question.tolerance_percent %}
+              <span class="tiny muted">(±{{ question.tolerance_percent|num }}%)</span>
+            {% endif %}
+          </p>
+        {% endif %}
+        <p class="small mt1 mb0">
+          {% if row.is_correct %}<span class="pill pill-pass">correct</span>
+          {% else %}<span class="pill pill-fail">wrong</span>{% endif %}
+          {{ row.points_awarded|num }} of {{ row.max_points|num }}
+        </p>
+      {% endif %}
+
+      {% if question.explanation %}
+      <p class="small muted mt1 mb0">
+        Explanation:
+        <span data-math data-math-source="{{ question.explanation }}">{{ question.explanation }}</span>
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if attempt.manual_pending or answers %}
+  <div class="button-row mb2">
+    <button type="submit" class="button button-primary">Save the written marks</button>
+  </div>
+  {% endif %}
+</form>
+
+{# ---------------------------------------------------------- staff controls #}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Override the score</h2></div>
+    <div class="card-body">
+      <p class="small muted">
+        An overridden score replaces the computed one and survives any later
+        re-marking, including a change to the answer key.
+      </p>
+      <form method="post" action="{{ url_for('exams.attempt_override', attempt_id=attempt.id) }}">
+        <div class="field-row">
+          <div class="field" style="flex:0 0 10rem">
+            <label for="score">Score</label>
+            <input type="number" id="score" name="score" step="0.5" min="0"
+                   value="{{ attempt.effective_score|num }}">
+            <p class="field-hint">out of {{ attempt.total_points|num }}</p>
+          </div>
+          <div class="field">
+            <label for="note">Why</label>
+            <input type="text" id="note" name="note" value="{{ attempt.override_note or '' }}"
+                   placeholder="Credit given for the method">
+          </div>
+        </div>
+        <div class="button-row">
+          <button type="submit" class="button button-primary">Set this score</button>
+          {% if attempt.is_override %}
+            <button type="submit" name="action" value="clear" class="button">
+              Remove the override
+            </button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Time and attempts</h2></div>
+    <div class="card-body">
+      <p class="small muted">
+        Reopening keeps everything the student has typed and gives the time
+        back — this is the fix when an exam was submitted by accident.
+        Clearing wipes the attempt so they start afresh.
+      </p>
+      <form method="post" action="{{ url_for('exams.attempt_reopen', attempt_id=attempt.id) }}" class="mb2">
+        <div class="field" style="max-width:12rem">
+          <label for="minutes">Extra minutes</label>
+          <input type="number" id="minutes" name="minutes" min="0" max="300" value="15">
+        </div>
+        <button type="submit" class="button button-gold">Reopen, keeping the answers</button>
+      </form>
+
+      <form method="post" action="{{ url_for('exams.attempt_reset', attempt_id=attempt.id) }}"
+            data-confirm="Clear {{ attempt.student.display_name }}'s attempt entirely? Their answers are lost.">
+        <button type="submit" class="button button-danger">Clear this attempt</button>
+      </form>
+
+      {% if attempt.reopen_count %}
+        <p class="tiny muted mt1 mb0">
+          Reopened {{ attempt.reopen_count }} time(s);
+          {{ (attempt.extra_seconds or 0) // 60 }} extra minute(s) given.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if attempt.events %}
+<details class="panel">
+  <summary>What happened during the exam <span class="tail">{{ attempt.events|length }} events</span></summary>
+  <div class="panel-body">
+    <p class="small muted">
+      A screen going to sleep is recorded but never held against the student —
+      a phone whose backlight times out looks identical to a tab switch to the
+      browser, and this tells them apart.
+    </p>
+    <table class="data table-compact">
+      <thead><tr><th>Time</th><th>What</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for event in attempt.events %}
+        <tr>
+          <td class="tiny nowrap">{{ event.created_at|dt('%H:%M:%S') }}</td>
+          <td class="small">
+            {% if event.kind == 'screen_sleep' %}
+              <span class="pill pill-info">{{ event.label }}</span>
+            {% elif event.kind in ('hidden', 'blur', 'paste') %}
+              <span class="pill pill-removal">{{ event.label }}</span>
+            {% elif event.kind == 'auto_submit' %}
+              <span class="pill pill-fail">{{ event.label }}</span>
+            {% else %}
+              <span class="pill">{{ event.label }}</span>
+            {% endif %}
+          </td>
+          <td class="tiny">{{ event.detail or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endblock %}

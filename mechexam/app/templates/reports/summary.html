@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Summary · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+    Summary
+  </div>
+  <div class="page-head">
+    <div class="grow">
+      <h1>{{ course.code }} — subject summary</h1>
+      <p class="page-sub">{{ course.title }} &middot; {{ course.term_label }}</p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">Grade sheet</a>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat"><div class="label">Students</div><div class="value">{{ tally.total }}</div></div>
+  <div class="stat"><div class="label">Passed</div>
+    <div class="value" style="color:var(--green-600)">{{ tally.passed }}</div>
+    <div class="note">{{ ((tally.passed / tally.total * 100)|round(1)) if tally.total else 0 }}%</div></div>
+  <div class="stat"><div class="label">For removal</div>
+    <div class="value" style="color:var(--amber-600)">{{ tally.removal }}</div></div>
+  <div class="stat"><div class="label">Failed</div>
+    <div class="value" style="color:var(--red-600)">{{ tally.failed }}</div></div>
+</div>
+
+{% if stats %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">How the class did</h2></div>
+  <div class="card-body">
+    <dl class="kv mb2">
+      <dt>Mean standing</dt><dd>{{ stats.mean|pct }}%</dd>
+      <dt>Median standing</dt><dd>{{ stats.median|pct }}%</dd>
+      <dt>Highest</dt><dd>{{ stats.high|pct }}%</dd>
+      <dt>Lowest</dt><dd>{{ stats.low|pct }}%</dd>
+      <dt>With marks recorded</dt><dd>{{ stats.count }} of {{ tally.total }}</dd>
+    </dl>
+
+    <h3>Grade distribution</h3>
+    <div class="bar-chart">
+      {% set most = distribution|map(attribute=1)|max if distribution else 1 %}
+      {% for grade, count in distribution %}
+      <div class="bar-row">
+        <span class="strong">{{ grade }}</span>
+        <div class="bar-track">
+          <div class="bar-fill {{ 'fail' if grade in ('5.00',) else ('' if grade == 'INC' else 'pass') }}"
+               style="width:{{ (count / most * 100)|round }}%"></div>
+        </div>
+        <span class="bar-value">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Grading components</h2></div>
+    <div class="card-body flush">
+      <table class="data table-compact">
+        <thead>
+          <tr><th>Scope</th><th>Component</th><th class="num">Weight</th>
+            <th class="num">Activities</th><th class="num">With marks</th></tr>
+        </thead>
+        <tbody>
+          {% for row in components %}
+          <tr>
+            <td class="small">{{ row.component.scope|title }}</td>
+            <td>{{ row.component.name }}</td>
+            <td class="num">{{ row.component.weight_percent|num }}%</td>
+            <td class="num">{{ row.item_count }}</td>
+            <td class="num">
+              {% if row.item_count and row.with_marks < row.item_count %}
+                <span style="color:var(--amber-600)">{{ row.with_marks }}</span>
+              {% else %}{{ row.with_marks }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-foot">
+      <p class="small muted mb0">
+        An activity with no marks recorded is left out of the computation
+        rather than counted as a zero, so a gradebook in progress reads
+        honestly.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Examinations held</h2></div>
+    <div class="card-body {{ 'flush' if exams }}">
+      {% if exams %}
+      <table class="data table-compact">
+        <thead><tr><th>Exam</th><th>Kind</th><th class="num">Items</th><th>Held</th></tr></thead>
+        <tbody>
+          {% for exam in exams %}
+          <tr>
+            <td class="small">
+              <a href="{{ url_for('exams.results', exam_id=exam.id) }}">{{ exam.title }}</a>
+            </td>
+            <td class="small">{{ exam.category }}</td>
+            <td class="num">{{ exam.questions|length }}</td>
+            <td class="tiny nowrap">{{ exam.opened_at|d if exam.opened_at else 'not opened' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="small muted mb0">No examinations in this subject.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Every student</h2></div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data table-compact">
+        <thead>
+          <tr><th>Student</th><th class="num">Lecture %</th>
+            {% if course.has_laboratory %}<th class="num">Laboratory %</th>{% endif %}
+            <th class="num">Final %</th><th class="mid">Grade</th><th class="mid">Remark</th></tr>
+        </thead>
+        <tbody>
+          {% for result in results %}
+          <tr>
+            <td>{{ result.student.name }}</td>
+            <td class="num">{{ result.lecture.percent|pct }}</td>
+            {% if course.has_laboratory %}
+              <td class="num">{{ result.laboratory.percent|pct if result.laboratory else '—' }}</td>
+            {% endif %}
+            <td class="num">{{ result.final_display }}</td>
+            <td class="mid"><strong>{{ result.effective_grade }}</strong></td>
+            <td class="mid">
+              <span class="pill {{ 'pill-pass' if result.effective_remark == 'Passed'
+                                   else ('pill-removal' if result.effective_remark == 'Removal'
+                                   else ('pill-info' if result.effective_remark == 'Incomplete' else 'pill-fail')) }}">
+                {{ result.effective_remark }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

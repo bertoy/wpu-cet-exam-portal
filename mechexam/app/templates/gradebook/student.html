@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}{{ student.display_name }} · {{ course.code }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('gradebook.index') }}">Gradebook</a><span>/</span>
+  <a href="{{ url_for('gradebook.course', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+  {{ student.display_name }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ student.display_name }}</h1>
+    <p class="page-sub">
+      {{ student.student_number or '' }}
+      {%- if student.program %} &middot; {{ student.program }}{% endif %}
+      {%- if student.year_level %} &middot; {{ student.year_level }}{% endif %}
+      &middot; {{ course.code }} — {{ course.title }}
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('reports.slip', course_id=course.id, student_id=student.id) }}">
+      Grade slip
+    </a>
+    <a class="button" href="{{ url_for('messages.compose', student=student.id, course=course.id, kind='private') }}">
+      Message
+    </a>
+  </div>
+</div>
+
+<div class="grid grid-4 mb2">
+  <div class="stat">
+    <div class="label">Lecture</div>
+    <div class="value">{{ result.lecture.percent|pct }}</div>
+  </div>
+  {% if result.laboratory %}
+  <div class="stat">
+    <div class="label">Laboratory</div>
+    <div class="value">{{ result.laboratory.percent|pct }}</div>
+  </div>
+  {% endif %}
+  <div class="stat">
+    <div class="label">Final standing</div>
+    <div class="value">{{ result.final_display }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Grade</div>
+    <div class="value grade {{ 'grade-pass' if result.effective_remark == 'Passed'
+                               else ('grade-removal' if result.effective_remark == 'Removal' else 'grade-fail') }}">
+      {{ result.effective_grade }}
+    </div>
+    <div class="note">
+      <span class="pill {{ 'pill-pass' if result.effective_remark == 'Passed'
+                           else ('pill-removal' if result.effective_remark == 'Removal'
+                           else ('pill-info' if result.effective_remark == 'Incomplete' else 'pill-fail')) }}">
+        {{ result.effective_remark }}
+      </span>
+    </div>
+  </div>
+</div>
+
+{% if result.qualifies_for_removal %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      This standing falls in the removal band
+      ({{ course.removal_low|pct }}–{{ course.removal_high|pct }}%), so this
+      student may sit the removal examination.
+      <a href="{{ url_for('gradebook.removal', course_id=course.id) }}">Open the removal page</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+{% for scope in [result.lecture, result.laboratory] %}
+  {% if scope %}
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">{{ scope.label }}</h2>
+      <span class="pill pill-info">{{ scope.percent|pct }}%</span>
+    </div>
+    <div class="card-body flush">
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Component</th><th>Activity</th><th class="num">Score</th>
+              <th class="num">Out of</th><th class="num">%</th><th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for component in scope.components %}
+              {% if component.entries %}
+                {% for entry in component.entries %}
+                <tr>
+                  {% if loop.first %}
+                  <td rowspan="{{ component.entries|length }}">
+                    <strong>{{ component.name }}</strong>
+                    <div class="tiny muted">{{ component.weight|num }}% of {{ scope.label|lower }}</div>
+                  </td>
+                  {% endif %}
+                  <td class="small">
+                    <a href="{{ url_for('gradebook.item', item_id=entry.item.id) }}">{{ entry.item.title }}</a>
+                    <span class="pill tiny">{{ entry.item.type_label }}</span>
+                  </td>
+                  <td class="num">{{ entry.display }}</td>
+                  <td class="num">{{ entry.max_points|num }}</td>
+                  <td class="num">
+                    {% if entry.percent is not none %}
+                      <span class="{{ 'grade-pass' if entry.percent >= 60 else 'grade-fail' }}">
+                        {{ entry.percent|pct }}
+                      </span>
+                    {% else %}—{% endif %}
+                  </td>
+                  <td class="small">{{ entry.remarks or '—' }}</td>
+                </tr>
+                {% endfor %}
+                <tr>
+                  <td colspan="4" class="right strong">
+                    {{ component.name }} — {{ component.earned|num }} of {{ component.possible|num }}
+                  </td>
+                  <td class="num strong">{{ component.raw_percent|pct }}</td>
+                  <td class="small muted">
+                    contributes {{ component.weighted|pct }}
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td><strong>{{ component.name }}</strong>
+                    <div class="tiny muted">{{ component.weight|num }}%</div></td>
+                  <td colspan="5" class="muted small">No activities recorded.</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="right">{{ scope.label }} standing</td>
+              <td class="num">{{ scope.percent|pct }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+{% if result.laboratory and result.laboratory.percent is not none and result.lecture.percent is not none %}
+<div class="card">
+  <div class="card-body">
+    <h3>Final standing</h3>
+    <p class="mb0">
+      {{ course.lecture_share|num }}% × {{ result.lecture.percent|pct }}
+      + {{ course.laboratory_share|num }}% × {{ result.laboratory.percent|pct }}
+      = <strong>{{ result.final_display }}%</strong>
+      → grade <strong>{{ result.effective_grade }}</strong>
+      ({{ result.effective_remark }}).
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
