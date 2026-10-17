@@ -67,7 +67,22 @@ class Setting(db.Model):
         "allow_student_self_password": "1",
         "grades_released_default": "0",
         "exam_autosave_seconds": "20",
+        "exam_clock_poll_seconds": "60",
     }
+
+    # Bounds for the exam-timing settings. The upper limit on autosave is a
+    # safety floor, not a preference: at 120 seconds a student whose battery
+    # dies loses at most two minutes of work, and that is as much as this app
+    # is willing to risk however tempting the saving in server time.
+    LIMITS = {
+        "exam_autosave_seconds": (5, 120),
+        "exam_clock_poll_seconds": (15, 300),
+    }
+
+    @classmethod
+    def get_bounded(cls, key: str) -> int:
+        low, high = cls.LIMITS.get(key, (0, 10 ** 6))
+        return max(low, min(high, cls.get_int(key, low)))
 
     @classmethod
     def get(cls, key: str, default: str | None = None) -> str:

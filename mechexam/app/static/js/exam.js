@@ -34,6 +34,7 @@
     exitMode: root.getAttribute("data-exit-mode") || "off",
     graceSeconds: parseInt(root.getAttribute("data-grace-seconds") || "180", 10),
     autosaveSeconds: parseInt(root.getAttribute("data-autosave-seconds") || "20", 10),
+    clockPollSeconds: parseInt(root.getAttribute("data-clock-poll-seconds") || "60", 10),
     blockPaste: root.getAttribute("data-block-paste") === "1",
     secondsRemaining: parseInt(root.getAttribute("data-seconds-remaining") || "0", 10)
   };
@@ -106,6 +107,7 @@
   function saveNow(onDone) {
     if (finished || !config.autosaveUrl) { if (onDone) onDone(); return; }
     pendingSave = false;
+    lastSaveAt = Date.now();
     setSaveState("saving", "Saving…");
 
     post(config.autosaveUrl, serialise(), function (status, payload) {
@@ -125,12 +127,26 @@
     });
   }
 
+  /* How long after the typing stops before we save. Short on purpose: this
+     is what makes a dead battery cost a student nothing. */
+  var QUIET_MS = 1200;
+
+  /* The administrator's "save answers every N seconds" is a THROTTLE, not a
+     timer: answers are never more than N seconds stale, and we never send
+     more than one save per N seconds per student. That second half is what
+     keeps a sixty-student exam affordable. */
+  var minGapMs = Math.max(5, config.autosaveSeconds) * 1000;
+  var lastSaveAt = 0;
+
   function scheduleSave() {
     if (finished) return;
     pendingSave = true;
     setSaveState("saving", "Saving…");
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveNow, 1200);
+
+    var sinceLast = Date.now() - lastSaveAt;
+    var wait = Math.max(QUIET_MS, minGapMs - sinceLast);
+    saveTimer = setTimeout(saveNow, wait);
   }
 
   /* A beacon survives the page being torn down, unlike XHR. */
@@ -606,7 +622,12 @@
     }
 
     setInterval(tick, 1000);
-    setInterval(syncStatus, 20000);
+
+    // The countdown is kept locally, so this poll only re-syncs the clock and
+    // notices an exam the instructor has closed early. Polling it every few
+    // seconds costs real money on a metered host and buys nothing.
+    setInterval(syncStatus, Math.max(15, config.clockPollSeconds) * 1000);
+
     setInterval(function () {
       if (pendingSave) saveNow();
     }, Math.max(5, config.autosaveSeconds) * 1000);

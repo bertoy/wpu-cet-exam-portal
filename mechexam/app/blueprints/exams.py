@@ -1078,7 +1078,7 @@ def monitor(exam_id: int):
         exam=exam,
         rows=rows,
         seconds_remaining=exam.seconds_remaining,
-        autosave_seconds=Setting.get_int("exam_autosave_seconds", 20),
+        autosave_seconds=Setting.get_bounded("exam_autosave_seconds"),
     )
 
 

@@ -80,9 +80,29 @@ def term():
         Setting.put("school_year", year)
         Setting.put("semester", semester)
         for key in ("removal_low", "removal_high", "passing_percent",
-                    "lecture_share", "laboratory_share", "exam_autosave_seconds"):
+                    "lecture_share", "laboratory_share"):
             if request.form.get(key):
                 Setting.put(key, request.form.get(key))
+
+        # The exam-timing settings are clamped rather than trusted: too long
+        # an autosave risks a student's work, too short a poll wastes the
+        # server's time, and neither should be reachable by a typo.
+        for key in ("exam_autosave_seconds", "exam_clock_poll_seconds"):
+            raw = request.form.get(key)
+            if not raw:
+                continue
+            low, high = Setting.LIMITS[key]
+            try:
+                value = int(float(raw))
+            except (TypeError, ValueError):
+                continue
+            if not low <= value <= high:
+                flash(
+                    f"{value} is outside the allowed range for that setting; "
+                    f"it was set to the nearest allowed value instead.",
+                    "warning",
+                )
+            Setting.put(key, max(low, min(high, value)))
         Setting.put("default_averaging", request.form.get("default_averaging", "total_points"))
         Setting.put("allow_student_self_password",
                     "1" if request.form.get("allow_student_self_password") else "0")

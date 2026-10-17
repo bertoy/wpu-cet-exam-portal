@@ -249,7 +249,8 @@ def sit(attempt_id: int):
         saved=saved,
         layouts=layouts,
         seconds_remaining=remaining,
-        autosave_seconds=Setting.get_int("exam_autosave_seconds", 20),
+        autosave_seconds=Setting.get_bounded("exam_autosave_seconds"),
+        clock_poll_seconds=Setting.get_bounded("exam_clock_poll_seconds"),
     )
 
 

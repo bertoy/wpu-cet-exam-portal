@@ -83,10 +83,43 @@
 
         <fieldset>
           <legend>Behaviour</legend>
-          <div class="field">
-            <label for="exam_autosave_seconds">Save exam answers every (seconds)</label>
-            <input type="number" id="exam_autosave_seconds" name="exam_autosave_seconds"
-                   min="5" max="120" value="{{ Setting.get('exam_autosave_seconds') }}">
+          <div class="field-row">
+            <div class="field">
+              <label for="exam_autosave_seconds">Save exam answers at most every (seconds)</label>
+              <input type="number" id="exam_autosave_seconds" name="exam_autosave_seconds"
+                     min="5" max="120" value="{{ Setting.get('exam_autosave_seconds') }}">
+              <p class="field-hint">
+                Answers are saved shortly after a student stops typing, but never
+                more often than this. A student who loses power therefore loses
+                at most this many seconds of work — which is why it cannot be
+                set beyond 120 seconds, however much server time a longer gap
+                would save.
+              </p>
+            </div>
+            <div class="field">
+              <label for="exam_clock_poll_seconds">Check the exam clock every (seconds)</label>
+              <input type="number" id="exam_clock_poll_seconds" name="exam_clock_poll_seconds"
+                     min="15" max="300" value="{{ Setting.get('exam_clock_poll_seconds') }}">
+              <p class="field-hint">
+                The countdown runs on the student's own device; this only
+                re-checks it against the server and notices an exam you have
+                closed early. Raising it costs nothing but a slightly later
+                reaction to an early close, and it is the single biggest saving
+                on a metered host.
+              </p>
+            </div>
+          </div>
+
+          <div class="callout callout-info">
+            <span class="glyph" aria-hidden="true">&#8505;</span>
+            <div class="grow">
+              <p class="mb0">
+                For a large class on a limited plan, 45 seconds for saving and
+                90 for the clock cuts the server time of a two-hour exam by
+                roughly two thirds, and still keeps every student's work within
+                45 seconds of safe.
+              </p>
+            </div>
           </div>
           <label class="check">
             <input type="checkbox" name="allow_student_self_password" value="1"

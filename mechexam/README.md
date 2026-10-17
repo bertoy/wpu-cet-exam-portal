@@ -189,6 +189,14 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 * **Leaving the exam** can submit it at once, warn with a grace period, or
   simply be recorded. A phone whose screen merely goes to sleep is recognised
   as such and is never penalised — the distinction the old build got wrong.
+* **Exam traffic is tunable.** Administration → Year & semester sets how
+  often answers are saved (at most every N seconds — answers still land
+  shortly after a student stops typing, so nobody can lose more than N
+  seconds of work) and how often the clock is re-checked. On a metered host
+  these two settings are the difference between an affordable exam and an
+  expensive one: 45 s and 90 s cut the running cost of a two-hour sitting by
+  about five times. The autosave cannot be set beyond 120 seconds — that is a
+  safety floor, not a preference.
 * **Reopen or reset** an attempt: reopening restores the time and keeps every
   answer, which is the fix for an exam submitted by accident.
 * **Score override** by the instructor, which survives any later re-marking.
@@ -286,6 +294,14 @@ Two tests come with it:
 ```bash
 python smoke.py        # walks every page as each role, and the write paths
 python test_rules.py   # checks the rules: grading, removal, access, timing
+```
+
+A third tool measures what a real class costs the server, so capacity is a
+measurement rather than a guess:
+
+```bash
+# against a running server, with a seeded class and an open exam
+python loadtest.py --url http://127.0.0.1:8000 --exam 1 --pin ABC123 --students 63
 ```
 
 Both run against SQLite by default and against PostgreSQL if `DATABASE_URL`
