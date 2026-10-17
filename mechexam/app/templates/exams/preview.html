@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Preview · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+  <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Preview
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Preview</h1>
+    <p class="page-sub">
+      {{ exam.title }} &middot; {{ course.code }} &middot;
+      {{ questions|length }} question{{ '' if questions|length == 1 else 's' }} &middot;
+      {{ total_points|num }} points &middot; {{ exam.duration_minutes }} minutes
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button" href="{{ url_for('exams.edit', exam_id=exam.id) }}">Back to editing</a>
+    <a class="button" href="{{ url_for('exams.paper', exam_id=exam.id) }}">Paper copy</a>
+  </div>
+</div>
+
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      This is the student's own view, rendered by the same code that delivers
+      the exam — so what you see here is what they will get. Nothing can be
+      typed in, nothing is saved, and no attempt is created, so it is safe to
+      open this while the exam is running.
+      {% if exam.shuffle_questions or exam.shuffle_options %}
+        Each student gets their own order; the controls below show other
+        draws.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if exam.shuffle_questions or exam.shuffle_options %}
+<div class="button-row">
+  {% if exam.shuffle_questions %}
+  <a class="button button-small {{ 'button-gold' if request.args.get('order') == 'shuffled' }}"
+     href="{{ url_for('exams.preview', exam_id=exam.id, seed=seed,
+                      order='given' if request.args.get('order') == 'shuffled' else 'shuffled') }}">
+    {{ 'Show the order you set' if request.args.get('order') == 'shuffled' else 'Shuffle the questions' }}
+  </a>
+  {% endif %}
+  {% for n in [1, 2, 3] %}
+  <a class="button button-small {{ 'button-gold' if seed == n }}"
+     href="{{ url_for('exams.preview', exam_id=exam.id, seed=n,
+                      order=request.args.get('order')) }}">
+    Student {{ n }}'s draw
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if exam.instructions %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Instructions the student reads first</h2></div>
+  <div class="card-body"><p class="mb0">{{ exam.instructions }}</p></div>
+</div>
+{% endif %}
+
+<fieldset disabled class="preview-shell">
+  {% for question in questions %}
+    {% with number = loop.index %}
+      {% include "partials/exam_question.html" %}
+    {% endwith %}
+  {% endfor %}
+</fieldset>
+
+{% if not questions %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow"><p class="mb0">This exam has no questions yet.</p></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -57,6 +57,13 @@ from ..models import (
     log_action,
     utcnow,
 )
+from ..question_io import (
+    normalise_part_type,
+    parse_parts_bulk,
+    parse_questions_csv,
+    questions_to_csv,
+    template_csv,
+)
 from ..security import require_course, staff_required, visible_courses
 
 bp = Blueprint("exams", __name__)
@@ -726,7 +733,7 @@ def _attach_parts(question: Question, req, problems: list[str]) -> None:
     # Bulk paste, parsed tolerantly.
     bulk = (form.get("parts_bulk") or "").strip()
     if bulk:
-        parts.extend(_parse_parts_bulk(bulk, problems))
+        parts.extend(parse_parts_bulk(bulk, problems))
 
     if not parts:
         problems.append(
@@ -742,7 +749,7 @@ def _attach_parts(question: Question, req, problems: list[str]) -> None:
                 label=label,
                 text=spec["text"],
                 answer=spec["answer"],
-                answer_type=_normalise_part_type(spec["answer_type"]),
+                answer_type=normalise_part_type(spec["answer_type"]),
                 points=spec["points"],
                 tolerance_percent=spec["tolerance"],
                 unit=spec["unit"],
@@ -756,90 +763,9 @@ def _letter(index: int) -> str:
     return letters[index - 1] if index <= len(letters) else str(index)
 
 
-KNOWN_PART_TYPES = {
-    "num": Q_NUMERIC, "numeric": Q_NUMERIC, "number": Q_NUMERIC,
-    "short": Q_SHORT, "text": Q_SHORT, "word": Q_SHORT,
-    "mcq": Q_MCQ, "choice": Q_MCQ,
-    "tf": Q_TRUEFALSE, "truefalse": Q_TRUEFALSE,
-    "essay": Q_ESSAY,
-}
-
-
-def _normalise_part_type(raw: str) -> str:
-    return KNOWN_PART_TYPES.get((raw or "").strip().lower(), Q_NUMERIC)
-
-
-def _parse_parts_bulk(bulk: str, problems: list[str]) -> list[dict]:
-    """Parse ``label | text | answer | …`` lines, order-tolerantly.
-
-    After the first three fields, anything else is examined: a known type word
-    becomes the answer type, and numbers fill points then tolerance.  This is
-    the fix for the crash that came from assuming field four was always a
-    number.
-    """
-    out: list[dict] = []
-
-    for line_no, line in enumerate(bulk.splitlines(), start=1):
-        if not line.strip():
-            continue
-        fields = [f.strip() for f in line.split("|")]
-        if len(fields) < 3:
-            problems.append(
-                f"sub-item line {line_no}: needs at least ‘label | question | answer’"
-            )
-            continue
-
-        label, text, answer = fields[0], fields[1], fields[2]
-        if not answer:
-            problems.append(f"sub-item line {line_no}: the answer is blank")
-            continue
-
-        answer_type = Q_NUMERIC
-        points: float | None = None
-        tolerance: float | None = None
-        unit = ""
-
-        for extra in fields[3:]:
-            if not extra:
-                continue
-            lowered = extra.lower()
-            if lowered in KNOWN_PART_TYPES:
-                answer_type = KNOWN_PART_TYPES[lowered]
-                continue
-            try:
-                value = float(extra)
-            except ValueError:
-                # Not a type word and not a number -- treat it as the unit
-                # rather than crashing, and say so.
-                if not unit:
-                    unit = extra
-                else:
-                    problems.append(
-                        f"sub-item line {line_no}: could not understand “{extra}”"
-                    )
-                continue
-            if points is None:
-                points = value
-            elif tolerance is None:
-                tolerance = value
-            else:
-                problems.append(
-                    f"sub-item line {line_no}: extra number “{extra}” ignored"
-                )
-
-        out.append(
-            {
-                "label": label,
-                "text": text,
-                "answer": answer,
-                "answer_type": answer_type,
-                "points": points if points is not None else 1.0,
-                "tolerance": tolerance if tolerance is not None else 0.0,
-                "unit": unit,
-            }
-        )
-    return out
-
+# The parsing of sub-items lives in app/question_io.py so that the editor form
+# and the CSV importer cannot drift apart: a line typed into the browser and
+# the same line in a spreadsheet are read by exactly the same code.
 
 # --------------------------------------------------------------------------- #
 # Figures
@@ -1000,6 +926,398 @@ def bank_question_add(bank_id: int):
     db.session.commit()
     flash("Question added to the bank.", "success")
     return redirect(url_for("exams.bank_detail", bank_id=bank.id))
+
+
+# --------------------------------------------------------------------------- #
+# Bulk question loading, by spreadsheet
+# --------------------------------------------------------------------------- #
+
+def _question_from_spec(spec: dict, exam_id=None, bank_id=None) -> Question:
+    """Turn one parsed CSV row into a question, with its sub-items attached."""
+    question = Question(
+        exam_id=exam_id,
+        bank_id=bank_id,
+        qtype=spec["qtype"],
+        text=spec["text"],
+        points=spec["points"],
+        answer=spec["answer"],
+        tolerance_percent=spec["tolerance_percent"],
+        unit=spec["unit"],
+        topic=spec["topic"],
+        difficulty=spec["difficulty"],
+        explanation=spec["explanation"],
+    )
+    if spec["qtype"] == Q_MATCHING:
+        question.pairs = spec["options"]
+    else:
+        question.options = spec["options"]
+
+    db.session.add(question)
+    db.session.flush()
+
+    for order, part in enumerate(spec["parts"], start=1):
+        db.session.add(
+            SubQuestion(
+                question_id=question.id,
+                label=part["label"] or _letter(order),
+                text=part["text"],
+                answer_type=part["answer_type"],
+                answer=part["answer"],
+                points=part["points"],
+                tolerance_percent=part["tolerance"],
+                unit=part["unit"],
+                order_index=order,
+            )
+        )
+    return question
+
+
+def _csv_payload(req) -> tuple[str, str | None]:
+    """The spreadsheet text, from either an upload or the paste box."""
+    upload = req.files.get("csv_file")
+    if upload and upload.filename:
+        name = upload.filename.lower()
+        if not name.endswith((".csv", ".txt", ".tsv")):
+            return "", (
+                "Save the sheet as CSV first — in Excel, File ▸ Save As ▸ "
+                "“CSV UTF-8 (Comma delimited)”. An .xlsx file cannot be read "
+                "directly."
+            )
+        raw = upload.read()
+        for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return raw.decode(encoding), None
+            except UnicodeDecodeError:
+                continue
+        return "", "That file's text could not be read. Save it as CSV UTF-8."
+    return (req.form.get("csv_text") or ""), None
+
+
+@bp.route("/banks/<int:bank_id>/import", methods=["POST"])
+@staff_required
+def bank_import(bank_id: int):
+    """Load a sheet of questions into a bank, checking it first.
+
+    Nothing is written until the instructor has seen what will be created.
+    The first pass reports what it read and what it could not; only a second
+    submission with ``confirm`` actually saves, and it saves all or nothing.
+    """
+    bank = QuestionBank.query.get_or_404(bank_id)
+    course = require_course(bank.course_id)
+
+    text, error = _csv_payload(request)
+    if error:
+        flash(error, "error")
+        return redirect(url_for("exams.bank_detail", bank_id=bank.id))
+
+    specs, problems = parse_questions_csv(text)
+
+    default_topic = (request.form.get("default_topic") or "").strip()
+    if default_topic:
+        for spec in specs:
+            if not spec["topic"]:
+                spec["topic"] = default_topic
+
+    if not specs:
+        for problem in problems[:25]:
+            flash(problem, "error")
+        if len(problems) > 25:
+            flash(f"…and {len(problems) - 25} more problems.", "error")
+        flash("Nothing was imported.", "warning")
+        return redirect(url_for("exams.bank_detail", bank_id=bank.id))
+
+    if not request.form.get("confirm"):
+        return render_template(
+            "exams/bank_import_review.html",
+            bank=bank,
+            course=course,
+            specs=specs,
+            problems=problems,
+            csv_text=text,
+            default_topic=default_topic,
+            question_types=dict(Question.TYPES),
+        )
+
+    created = 0
+    try:
+        for spec in specs:
+            _question_from_spec(spec, bank_id=bank.id)
+            created += 1
+        log_action(
+            current_user,
+            "bank.import",
+            entity="question_bank",
+            entity_id=bank.id,
+            detail=f"{created} questions imported into “{bank.name}”",
+        )
+        db.session.commit()
+    except Exception:  # noqa: BLE001 - a half-loaded bank is worse than none
+        db.session.rollback()
+        current_app.logger.exception("question bank import failed")
+        flash(
+            "The import failed part-way and nothing was saved, so the bank is "
+            "exactly as it was. Check the sheet and try again.",
+            "error",
+        )
+        return redirect(url_for("exams.bank_detail", bank_id=bank.id))
+
+    flash(f"Added {created} question{'s' if created != 1 else ''} to the bank.",
+          "success")
+    if problems:
+        flash(
+            f"{len(problems)} row{'s' if len(problems) != 1 else ''} were "
+            f"skipped or adjusted — see the warnings above the sheet.",
+            "warning",
+        )
+    return redirect(url_for("exams.bank_detail", bank_id=bank.id))
+
+
+@bp.route("/banks/<int:bank_id>/export.csv")
+@staff_required
+def bank_export(bank_id: int):
+    """The bank as a spreadsheet, in the same shape the importer reads."""
+    bank = QuestionBank.query.get_or_404(bank_id)
+    require_course(bank.course_id)
+    questions = (
+        Question.query.filter_by(bank_id=bank.id)
+        .order_by(Question.topic, Question.id)
+        .all()
+    )
+    body = questions_to_csv(questions)
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", bank.name).strip("-").lower() or "bank"
+    return current_app.response_class(
+        body,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{slug}-questions.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@bp.route("/questions/template.csv")
+@staff_required
+def question_template():
+    """A worked example of every question type, to edit and send back."""
+    return current_app.response_class(
+        template_csv(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="question-template.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@bp.route("/<int:exam_id>/import", methods=["POST"])
+@staff_required
+def exam_import(exam_id: int):
+    """Load a sheet of questions straight onto an exam."""
+    exam = _require_exam(exam_id)
+
+    text, error = _csv_payload(request)
+    if error:
+        flash(error, "error")
+        return redirect(url_for("exams.edit", exam_id=exam.id))
+
+    specs, problems = parse_questions_csv(text)
+    if not specs:
+        for problem in problems[:25]:
+            flash(problem, "error")
+        flash("Nothing was imported.", "warning")
+        return redirect(url_for("exams.edit", exam_id=exam.id))
+
+    last = (
+        db.session.query(func.max(Question.order_index))
+        .filter(Question.exam_id == exam.id)
+        .scalar()
+        or 0
+    )
+    created = 0
+    try:
+        for offset, spec in enumerate(specs, start=1):
+            question = _question_from_spec(spec, exam_id=exam.id)
+            question.order_index = last + offset
+            created += 1
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+        current_app.logger.exception("exam question import failed")
+        flash("The import failed and nothing was saved.", "error")
+        return redirect(url_for("exams.edit", exam_id=exam.id))
+
+    flash(f"Added {created} question{'s' if created != 1 else ''} to the exam.",
+          "success")
+    for problem in problems[:10]:
+        flash(problem, "warning")
+    return redirect(url_for("exams.edit", exam_id=exam.id))
+
+
+@bp.route("/<int:exam_id>/questions.csv")
+@staff_required
+def exam_export(exam_id: int):
+    exam = _require_exam(exam_id)
+    questions = (
+        Question.query.filter_by(exam_id=exam.id)
+        .order_by(Question.order_index, Question.id)
+        .all()
+    )
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", exam.title).strip("-").lower() or "exam"
+    return current_app.response_class(
+        questions_to_csv(questions),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{slug}-questions.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Seeing it as a student does
+# --------------------------------------------------------------------------- #
+
+@bp.route("/<int:exam_id>/preview")
+@staff_required
+def preview(exam_id: int):
+    """The exam exactly as a student sees it, without creating an attempt.
+
+    It renders through the same template partial the delivery page uses, so
+    there is nothing to keep in step: if the preview looks right, the exam
+    looks right. Nothing is written — no attempt, no answers — so this can be
+    opened on an exam that is already running.
+    """
+    exam = _require_exam(exam_id)
+    questions = list(exam.questions)
+
+    seed = request.args.get("seed", type=int) or 1
+    if request.args.get("order") == "shuffled" and exam.shuffle_questions:
+        questions = list(questions)
+        random.Random(seed * 7919).shuffle(questions)
+
+    from .taking import _layout                       # the student's own view
+
+    return render_template(
+        "exams/preview.html",
+        exam=exam,
+        course=exam.course,
+        questions=questions,
+        layouts={q.id: _layout(q, seed, exam) for q in questions},
+        saved={},
+        preview=True,
+        seed=seed,
+        total_points=sum(q.effective_points for q in questions),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The paper version
+# --------------------------------------------------------------------------- #
+
+@bp.route("/<int:exam_id>/paper")
+@staff_required
+def paper(exam_id: int):
+    """The exam as a printable paper, with an optional answer key.
+
+    Power and signal are not guaranteed, and an examination that cannot be
+    sat is worse than one sat on paper. This prints the same questions, in
+    the same order, so the paper and the screen cannot disagree.
+    """
+    exam = _require_exam(exam_id)
+    questions = (
+        Question.query.filter_by(exam_id=exam.id)
+        .order_by(Question.order_index, Question.id)
+        .all()
+    )
+
+    show_key = request.args.get("key") == "1"
+    shuffle = request.args.get("shuffle") == "1"
+    sets = max(1, min(request.args.get("sets", type=int) or 1, 4))
+    answer_sheet = request.args.get("sheet", "1") != "0"
+    spacing = request.args.get("space", "normal")
+
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    papers = []
+    for index in range(sets):
+        # Seeded on the exam and the set, so reprinting Set B gives exactly
+        # the same Set B. An unseeded shuffle would hand out papers whose
+        # printed key no longer matches them.
+        rng = random.Random(f"{exam.id}-{index}")
+
+        ordered = list(questions)
+        if shuffle and index > 0:
+            rng.shuffle(ordered)
+
+        rows = []
+        slots = []            # the answer-sheet boxes, numbered as printed
+        for number, question in enumerate(ordered, start=1):
+            row = {"number": number, "question": question, "key": "", "column_b": []}
+
+            if question.qtype in (Q_MCQ, Q_TRUEFALSE):
+                options = list(question.options or [])
+                for position, option in enumerate(options):
+                    if option == question.answer:
+                        row["key"] = f"{letters[position]} — {option}"
+                        break
+                slots.append(f"{number}")
+
+            elif question.qtype == Q_MATCHING:
+                pairs = list(question.pairs or [])
+                order = list(range(len(pairs)))
+                if shuffle:
+                    rng.shuffle(order)
+                row["column_b"] = [pairs[i] for i in order]
+                # Where each left-hand item ended up in the printed column B.
+                where = {original: printed for printed, original in enumerate(order)}
+                row["key"] = ", ".join(
+                    f"{i + 1}={letters[where[i]]}" for i in range(len(pairs))
+                )
+                slots.extend(f"{number}.{i + 1}" for i in range(len(pairs)))
+
+            elif question.qtype == Q_MULTIPART:
+                row["key"] = "; ".join(
+                    f"{p.label}) {p.answer}{(' ' + p.unit) if p.unit else ''}"
+                    for p in question.parts
+                )
+                slots.extend(
+                    f"{number}{p.label or letters[i].lower()}"
+                    for i, p in enumerate(question.parts)
+                )
+
+            elif question.qtype == Q_ESSAY:
+                row["key"] = (
+                    f"marked by hand — guide: {question.answer}"
+                    if question.answer else "marked by hand"
+                )
+
+            else:
+                tail = f" {question.unit}" if question.unit else ""
+                if question.tolerance_percent:
+                    tail += f" (±{question.tolerance_percent:g}%)"
+                row["key"] = f"{question.answer}{tail}"
+                slots.append(f"{number}")
+
+            rows.append(row)
+
+        papers.append({
+            "label": letters[index] if sets > 1 else "",
+            "rows": rows,
+            "slots": slots,
+        })
+
+    return render_template(
+        "exams/paper.html",
+        exam=exam,
+        course=exam.course,
+        papers=papers,
+        show_key=show_key,
+        shuffle=shuffle,
+        sets=sets,
+        answer_sheet=answer_sheet,
+        spacing=spacing,
+        total_points=sum(q.effective_points for q in questions),
+    )
 
 
 @bp.route("/<int:exam_id>/pull-from-bank", methods=["POST"])

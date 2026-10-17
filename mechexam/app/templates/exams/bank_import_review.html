@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Check the import · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.banks') }}">Question banks</a><span>/</span>
+  <a href="{{ url_for('exams.bank_detail', bank_id=bank.id) }}">{{ bank.name }}</a><span>/</span>Check the import
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Check before importing</h1>
+    <p class="page-sub">
+      Nothing has been saved yet. {{ specs|length }} question{{ '' if specs|length == 1 else 's' }}
+      read from your sheet, ready for <strong>{{ bank.name }}</strong> ({{ course.code }}).
+    </p>
+  </div>
+</div>
+
+{% if problems %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p><strong>{{ problems|length }} row{{ '' if problems|length == 1 else 's' }}
+      could not be read, or were adjusted.</strong>
+      These are left out; the questions below are unaffected. Fix them in the
+      sheet and import just those rows afterwards if you want them.</p>
+    <ul class="mb0 small">
+      {% for problem in problems[:40] %}<li>{{ problem }}</li>{% endfor %}
+      {% if problems|length > 40 %}<li>…and {{ problems|length - 40 }} more.</li>{% endif %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">What will be added</h2>
+    <span class="pill">{{ specs|sum(attribute='points')|num }} points in total</span>
+  </div>
+  <div class="card-body">
+    {% for spec in specs %}
+    <div class="question">
+      <div class="question-head">
+        <span class="question-number">{{ loop.index }}</span>
+        <span class="pill">{{ question_types.get(spec.qtype, spec.qtype) }}</span>
+        {% if spec.topic %}<span class="pill pill-info tiny">{{ spec.topic }}</span>{% endif %}
+        <span class="pill tiny">{{ spec.difficulty }}</span>
+        <span class="question-points">{{ spec.points|num }} pt{{ '' if spec.points == 1 else 's' }}</span>
+      </div>
+      <div class="question-body">
+        <div class="question-text" data-math data-math-source="{{ spec.text }}">{{ spec.text }}</div>
+
+        {% if spec.qtype in ('mcq', 'truefalse') %}
+          {% for option in spec.options %}
+          <div class="option {{ 'correct' if option == spec.answer }}">
+            <span class="option-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+            <span data-math data-math-source="{{ option }}">{{ option }}</span>
+          </div>
+          {% endfor %}
+        {% elif spec.qtype == 'matching' %}
+          <ul class="small mb0">
+            {% for pair in spec.options %}
+            <li>{{ pair.left }} &rarr; {{ pair.right }}</li>
+            {% endfor %}
+          </ul>
+        {% elif spec.qtype == 'multipart' %}
+          <ol class="small mb0">
+            {% for part in spec.parts %}
+            <li>
+              <strong>{{ part.label }}.</strong> {{ part.text }}
+              &mdash; key <span class="mono">{{ part.answer }}</span>
+              {%- if part.unit %} {{ part.unit }}{% endif %}
+              ({{ part.points|num }} pt{{ '' if part.points == 1 else 's' }})
+            </li>
+            {% endfor %}
+          </ol>
+        {% elif spec.qtype == 'essay' %}
+          <p class="small mb0">Marked by hand.{% if spec.answer %} Guide answer recorded.{% endif %}</p>
+        {% else %}
+          <p class="small mb0">Key: <strong class="mono">{{ spec.answer }}</strong>
+            {%- if spec.unit %} {{ spec.unit }}{% endif %}
+            {%- if spec.tolerance_percent %} &middot; &plusmn;{{ spec.tolerance_percent|num }}%{% endif %}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('exams.bank_import', bank_id=bank.id) }}">
+  <input type="hidden" name="csv_text" value="{{ csv_text }}">
+  <input type="hidden" name="default_topic" value="{{ default_topic }}">
+  <input type="hidden" name="confirm" value="1">
+  <div class="button-row">
+    <button type="submit" class="button button-primary">
+      Import {{ specs|length }} question{{ '' if specs|length == 1 else 's' }}
+    </button>
+    <a class="button button-quiet" href="{{ url_for('exams.bank_detail', bank_id=bank.id) }}">
+      Cancel
+    </a>
+  </div>
+</form>
+{% endblock %}

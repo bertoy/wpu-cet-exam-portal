@@ -202,6 +202,26 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 * **Score override** by the instructor, which survives any later re-marking.
 * **Question banks**: keep items by topic and difficulty, pull a set into any
   exam, or have the exam draw a different random selection for each student.
+* **A whole paper from a spreadsheet.** Type the questions in Excel, save as
+  CSV UTF-8, and upload it into a bank or straight onto an exam. One sheet
+  carries all seven question types, including matching pairs and multi-part
+  problems; there is a download of a worked template so no column has to be
+  guessed. Nothing is written until you have seen a preview of exactly what
+  was read, and every row it could not read is named with its line number and
+  the reason, so one typo in row 40 does not cost you the other 39. Banks and
+  exams export back out in the same format — the quickest way to rewrite a
+  long paper is export, edit in Excel, import.
+* **Preview as a student sees it.** The preview is rendered by the very same
+  template the exam itself uses, so there is nothing to keep in step: if the
+  preview looks right, the exam looks right. It creates no attempt and writes
+  nothing, so it is safe to open while an exam is running, and it will show
+  you another student's shuffle.
+* **A paper copy, with an answer key.** Print the same questions in the same
+  order, optionally as several shuffled versions with space for working and a
+  separate answer sheet. Each version is seeded, so reprinting Set B gives the
+  same Set B and the key you printed still matches the paper in a student's
+  hand. Power and signal are not guaranteed in Palawan, and an examination
+  sat on paper beats one cancelled.
 * **Item analysis**: difficulty and discrimination per question, so you can
   see which items are not working and why.
 
@@ -247,6 +267,12 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 * Students get their own password and may change it; instructors issue a reset
   code when someone forgets, so no email server is needed.
 * Class lists can be imported by pasting them in, creating accounts as it goes.
+* **One student can be added straight from the subject page** — for the late
+  enrolee who turns up in the second week. If the student number is already on
+  record the existing account is used and only the enrolment is added, so a
+  student you share with another subject keeps one account and one password;
+  if the number is new, the account is created and enrolled in one step. A
+  student who was dropped is readmitted rather than duplicated.
 * **Attendance** per meeting, with a rate per student.
 
 ### Everything else

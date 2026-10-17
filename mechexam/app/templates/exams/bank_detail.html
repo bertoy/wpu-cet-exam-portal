@@ -83,6 +83,63 @@
 </div>
 
 <div class="card">
+  <div class="card-head">
+    <h2 class="grow">Load many questions from a spreadsheet</h2>
+    <a class="button button-quiet button-small"
+       href="{{ url_for('exams.question_template') }}">Download the template</a>
+    {% if questions %}
+    <a class="button button-quiet button-small"
+       href="{{ url_for('exams.bank_export', bank_id=bank.id) }}">Export this bank</a>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <p class="small">
+      Type a whole paper in Excel, save it as <strong>CSV UTF-8</strong>, and
+      upload it here. You will see exactly what was read before anything is
+      saved. The template has a worked example of all seven question types —
+      multiple choice, true or false, numerical, short answer, matching, essay
+      and multi-part problems — so the columns need not be guessed. Exporting
+      gives you the same format back, which is the quickest way to edit a bank
+      in bulk: export, change it in Excel, import again.
+    </p>
+
+    <form method="post" action="{{ url_for('exams.bank_import', bank_id=bank.id) }}"
+          enctype="multipart/form-data">
+      <div class="field-row">
+        <div class="field">
+          <label for="csv_file">CSV file</label>
+          <input type="file" id="csv_file" name="csv_file" accept=".csv,.txt,.tsv">
+        </div>
+        <div class="field">
+          <label for="default_topic">Topic for rows that leave it blank</label>
+          <input type="text" id="default_topic" name="default_topic"
+                 list="bank-topics" placeholder="e.g. Ideal gas">
+          <datalist id="bank-topics">
+            {% for topic in topics %}<option value="{{ topic }}">{% endfor %}
+          </datalist>
+          <p class="field-hint">
+            Topics are what let you draw a random ten questions on one
+            chapter, so it is worth filling in.
+          </p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="csv_text">…or paste the rows here instead</label>
+        <textarea id="csv_text" name="csv_text" rows="4"
+                  placeholder="type,question,points,answer,option_a,option_b,…"></textarea>
+        <p class="field-hint">
+          Useful for a handful of questions, or for pasting straight out of a
+          Google Sheet. Include the heading row.
+        </p>
+      </div>
+
+      <button type="submit" class="button button-primary">Check the sheet</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
   <div class="card-head"><h2 class="grow">Add a question to the bank</h2></div>
   <div class="card-body">
     {% with action = url_for('exams.bank_question_add', bank_id=bank.id), question = none %}

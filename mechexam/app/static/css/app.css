@@ -932,6 +932,22 @@ details.panel .panel-body { padding: 0 1rem 1rem; }
     display: flex; gap: 8mm; margin-top: 5mm; font-size: 9pt; font-weight: 600;
   }
 
+
+  /* The paper copy of an exam prints portrait, whatever the sheets do. */
+  @page paper { size: A4 portrait; margin: 12mm 12mm 10mm; }
+  .paper { page: paper; max-width: none; margin: 0; padding: 0; border: 0; }
+  .paper + .paper, .paper-break { page-break-before: always; }
+  .paper .paper-meta { font-size: 9pt; }
+  .paper-questions { font-size: 10pt; padding-left: 7mm; }
+  .paper-question { margin-bottom: 4mm; }
+  .paper-tight .paper-question { margin-bottom: 2.5mm; }
+  .paper-wide .paper-question { margin-bottom: 7mm; }
+  .paper-line { border-bottom: 0.4pt solid #888; }
+  .paper-matching th { border-bottom: 0.4pt solid #000; }
+  .answer-grid { font-size: 9.5pt; }
+  .paper-foot {
+    font-size: 7.5pt; color: #000; border-top: 0.4pt solid #000;
+  }
   a { color: #000; text-decoration: none; }
   a[href]::after { content: ""; }
 }
@@ -1004,4 +1020,63 @@ details.panel .panel-body { padding: 0 1rem 1rem; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- the paper copy of an exam ----------------------------------- */
+
+.paper { max-width: 48rem; margin-left: auto; margin-right: auto; }
+.paper .paper-meta {
+  width: 100%; margin-bottom: 0.5rem; font-size: 0.85rem; border: 0;
+}
+.paper .paper-meta td { border: 0; padding: 0.1rem 0; vertical-align: top; }
+
+.paper-questions { margin: 0.8rem 0 0; padding-left: 1.6rem; }
+.paper-question {
+  margin-bottom: 1rem; page-break-inside: avoid; break-inside: avoid;
+}
+.paper-stem { display: block; }
+.paper-marks { float: right; font-weight: 600; margin-left: 0.6rem; }
+.paper-figure { max-width: 70%; max-height: 60mm; display: block; margin: 0.4rem 0; }
+
+.paper-options, .paper-parts { list-style: none; margin: 0.35rem 0 0; padding-left: 0.4rem; }
+.paper-options li, .paper-parts li { margin-bottom: 0.2rem; }
+.paper-parts li { margin-bottom: 0.5rem; }
+.opt-letter { font-weight: 600; display: inline-block; min-width: 1.5em; }
+
+.paper-matching { width: 100%; margin: 0.4rem 0; font-size: 0.9rem; }
+.paper-matching th, .paper-matching td {
+  border: 0; padding: 0.12rem 0.3rem; text-align: left; vertical-align: top;
+}
+.paper-matching th { font-weight: 600; border-bottom: 1px solid #999; }
+
+.paper-work { min-height: 18mm; }
+.paper-tight .paper-work { min-height: 10mm; }
+.paper-wide .paper-work { min-height: 34mm; }
+.paper-answer-line { margin: 0.3rem 0 0; font-weight: 600; }
+
+.paper-lines { margin-top: 0.4rem; }
+.paper-line { border-bottom: 1px solid #bbb; height: 7mm; }
+.paper-tight .paper-line { height: 5.5mm; }
+.paper-wide .paper-line { height: 9mm; }
+
+.answer-grid {
+  list-style: none; margin: 0.6rem 0 0; padding: 0;
+  columns: 4; column-gap: 1.2rem; font-size: 0.9rem;
+}
+.answer-grid.wide { columns: 2; }
+.answer-grid li {
+  margin-bottom: 0.3rem; break-inside: avoid;
+}
+.slot-no { font-weight: 600; display: inline-block; min-width: 2.2em; }
+
+.paper-foot {
+  margin-top: 1rem; padding-top: 0.4rem; border-top: 1px solid #ccc;
+  font-size: 0.75rem; color: #555; text-align: center;
+}
+
+/* A preview is the student's view with nothing to type into. */
+.preview-shell { border: 0; padding: 0; margin: 0; min-width: 0; }
+.preview-shell .question { opacity: 0.97; }
+.preview-shell input, .preview-shell textarea, .preview-shell select {
+  background: var(--line-soft); cursor: not-allowed;
 }

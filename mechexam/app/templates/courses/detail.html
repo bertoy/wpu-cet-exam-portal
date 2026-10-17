@@ -440,6 +440,61 @@
   </div>
 
   <div class="card">
+    <div class="card-head"><h2 class="grow">Add one student</h2></div>
+    <div class="card-body">
+      <p class="small">
+        For a single late enrolee. If the student number is already on record
+        the existing account is used and only the enrolment is added — so a
+        student you share with another subject keeps one account and one
+        password.
+      </p>
+      <form method="post" action="{{ url_for('courses.add_student', course_id=course.id) }}">
+        <div class="field-row">
+          <div class="field">
+            <label for="one_number">Student number</label>
+            <input type="text" id="one_number" name="student_number"
+                   placeholder="2023-0001" required>
+          </div>
+          {% if sections %}
+          <div class="field">
+            <label for="one_section">Into section</label>
+            <select id="one_section" name="section_id" required>
+              {% for section in sections %}
+                <option value="{{ section.id }}" {{ 'selected' if section_id == section.id }}>{{ section.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+        </div>
+        <div class="field">
+          <label for="one_name">Full name</label>
+          <input type="text" id="one_name" name="name"
+                 placeholder="Dela Cruz, Juan P.">
+          <p class="field-hint">
+            Needed only if this student has no account yet.
+          </p>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="one_program">Programme</label>
+            <input type="text" id="one_program" name="program" placeholder="BSME">
+          </div>
+          <div class="field">
+            <label for="one_year">Year level</label>
+            <input type="text" id="one_year" name="year_level" placeholder="4th Year">
+          </div>
+          <div class="field">
+            <label for="one_password">First password</label>
+            <input type="text" id="one_password" name="password"
+                   placeholder="Blank = student number">
+          </div>
+        </div>
+        <button type="submit" class="button button-primary">Add to this subject</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-head"><h2 class="grow">Import a class list</h2></div>
     <div class="card-body">
       <p class="small">

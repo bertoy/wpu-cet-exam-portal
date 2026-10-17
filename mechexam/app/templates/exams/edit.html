@@ -35,6 +35,10 @@
       </form>
       <a class="button" href="{{ url_for('exams.results', exam_id=exam.id) }}">Results</a>
     {% endif %}
+    {% if exam.questions %}
+      <a class="button" href="{{ url_for('exams.preview', exam_id=exam.id) }}">Preview</a>
+      <a class="button" href="{{ url_for('exams.paper', exam_id=exam.id) }}">Paper copy</a>
+    {% endif %}
   </div>
 </div>
 
@@ -200,6 +204,40 @@
         <p>No questions yet.</p>
       </div>
     {% endif %}
+  </div>
+</div>
+
+{# ----------------------------------------------------------- from a sheet #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Load questions from a spreadsheet</h2>
+    <a class="button button-quiet button-small"
+       href="{{ url_for('exams.question_template') }}">Template</a>
+    {% if exam.questions %}
+    <a class="button button-quiet button-small"
+       href="{{ url_for('exams.exam_export', exam_id=exam.id) }}">Export this exam</a>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    <p class="small">
+      A whole paper typed in Excel and saved as <strong>CSV UTF-8</strong>
+      loads in one go, appended after the questions already here. The template
+      shows all seven question types. Exporting and re-importing is also the
+      quickest way to reorder or reword a long paper.
+    </p>
+    <form method="post" action="{{ url_for('exams.exam_import', exam_id=exam.id) }}"
+          enctype="multipart/form-data">
+      <div class="field">
+        <label for="exam_csv_file">CSV file</label>
+        <input type="file" id="exam_csv_file" name="csv_file" accept=".csv,.txt,.tsv">
+      </div>
+      <div class="field">
+        <label for="exam_csv_text">…or paste the rows</label>
+        <textarea id="exam_csv_text" name="csv_text" rows="3"
+                  placeholder="type,question,points,answer,option_a,option_b,…"></textarea>
+      </div>
+      <button type="submit" class="button">Load into this exam</button>
+    </form>
   </div>
 </div>
 

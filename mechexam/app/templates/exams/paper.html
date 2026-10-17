@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Paper copy · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
+    <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Paper copy
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>Paper copy</h1>
+      <p class="page-sub">
+        The same questions in the same order as on screen. Print this before
+        every major examination and a power cut becomes an inconvenience
+        rather than a cancelled exam.
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('exams.edit', exam_id=exam.id) }}">Back</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">What to print</h2></div>
+    <div class="card-body">
+      <form method="get" class="field-row">
+        <div class="field">
+          <label for="sets">Number of versions</label>
+          <select id="sets" name="sets">
+            {% for n in [1, 2, 3, 4] %}
+            <option value="{{ n }}" {{ 'selected' if sets == n }}>
+              {{ 'One paper' if n == 1 else n ~ ' versions (Set A, B…)' }}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="field-hint">
+            Several versions, shuffled, make copying off a neighbour pointless
+            in a crowded room. Each version keeps its order when reprinted, so
+            the key always matches the paper.
+          </p>
+        </div>
+        <div class="field">
+          <label for="space">Space for working</label>
+          <select id="space" name="space">
+            <option value="tight" {{ 'selected' if spacing == 'tight' }}>Tight — saves paper</option>
+            <option value="normal" {{ 'selected' if spacing == 'normal' }}>Normal</option>
+            <option value="wide" {{ 'selected' if spacing == 'wide' }}>Wide — room for solutions</option>
+          </select>
+        </div>
+      </form>
+      <div class="button-row">
+        <a class="button {{ 'button-gold' if sets > 1 and shuffle }}"
+           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
+                            shuffle=0 if shuffle else 1, sheet=1 if answer_sheet else 0) }}">
+          {{ 'Same order in every version' if shuffle else 'Shuffle the later versions' }}
+        </a>
+        <a class="button {{ 'button-gold' if answer_sheet }}"
+           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
+                            shuffle=1 if shuffle else 0, sheet=0 if answer_sheet else 1) }}">
+          {{ 'Without an answer sheet' if answer_sheet else 'With an answer sheet' }}
+        </a>
+        <a class="button {{ 'button-gold' if show_key }}"
+           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
+                            shuffle=1 if shuffle else 0, sheet=1 if answer_sheet else 0,
+                            key=0 if show_key else 1) }}">
+          {{ 'Hide the answer key' if show_key else 'Add the answer key' }}
+        </a>
+      </div>
+      {% if show_key %}
+      <div class="callout callout-warning">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          <p class="mb0">
+            The answer key is included below and will print. Print the papers
+            and the key separately unless you are keeping both.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% for paper in papers %}
+<div class="sheet paper paper-{{ spacing }}">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">
+      {{ exam.title }}{% if paper.label %} &mdash; Set {{ paper.label }}{% endif %}
+    </p>
+  </div>
+
+  <table class="paper-meta">
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} &mdash; {{ course.title }}</td>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+    </tr>
+    <tr>
+      <td><strong>Time allowed:</strong> {{ exam.duration_minutes }} minutes</td>
+      <td><strong>Total:</strong> {{ total_points|num }} points</td>
+    </tr>
+  </table>
+
+  <table class="paper-meta">
+    <tr>
+      <td style="width:55%">Name: ______________________________________</td>
+      <td style="width:20%">Section: ______________</td>
+      <td style="width:25%">Score: ________ / {{ total_points|num }}</td>
+    </tr>
+  </table>
+
+  {% if exam.instructions %}
+  <p class="small"><strong>Instructions.</strong> {{ exam.instructions }}</p>
+  {% endif %}
+
+  <ol class="paper-questions">
+    {% for row in paper.rows %}
+    {% set question = row.question %}
+    <li class="paper-question">
+      <span class="paper-marks">({{ question.effective_points|num }})</span>
+      <div class="paper-stem" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
+
+      {% if question.figure_path %}
+        <img class="paper-figure" src="{{ url_for('exams.figure', name=question.figure_path) }}"
+             alt="{{ question.figure_caption or 'Figure' }}">
+        {% if question.figure_caption %}
+        <p class="small mb0"><em>{{ question.figure_caption }}</em></p>
+        {% endif %}
+      {% endif %}
+
+      {% if question.qtype in ('mcq', 'truefalse') %}
+        <ol class="paper-options">
+          {% for option in question.options %}
+          <li><span class="opt-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}.</span>
+            <span data-math data-math-source="{{ option }}">{{ option }}</span></li>
+          {% endfor %}
+        </ol>
+
+      {% elif question.qtype == 'matching' %}
+        <table class="paper-matching">
+          <tr><th style="width:4em">Answer</th><th>Column A</th><th>Column B</th></tr>
+          {% for pair in question.pairs %}
+          <tr>
+            <td>________</td>
+            <td>{{ loop.index }}. {{ pair.left }}</td>
+            <td>{{ 'ABCDEFGHIJKLMNOPQRST'[loop.index0] }}. {{ row.column_b[loop.index0].right }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+
+      {% elif question.qtype == 'multipart' %}
+        <ol class="paper-parts">
+          {% for part in question.parts %}
+          <li>
+            <span class="opt-letter">{{ part.label or 'abcdefgh'[loop.index0] }})</span>
+            <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
+            <span class="paper-marks">({{ part.points|num }})</span>
+            <div class="paper-work"></div>
+          </li>
+          {% endfor %}
+        </ol>
+
+      {% elif question.qtype == 'essay' %}
+        <div class="paper-lines">
+          {% for _ in range(8) %}<div class="paper-line"></div>{% endfor %}
+        </div>
+
+      {% else %}
+        <div class="paper-work"></div>
+        <p class="paper-answer-line">
+          Answer: ____________________{% if question.unit %} {{ question.unit }}{% endif %}
+        </p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+
+  <p class="paper-foot">
+    {{ exam.title }}{% if paper.label %} &mdash; Set {{ paper.label }}{% endif %}
+    &middot; {{ course.code }} &middot; {{ course.term_label }}
+  </p>
+</div>
+
+{% if answer_sheet and paper.slots %}
+<div class="sheet paper paper-break">
+  <div class="sheet-head">
+    <p class="title">
+      Answer Sheet &mdash; {{ exam.title }}{% if paper.label %} (Set {{ paper.label }}){% endif %}
+    </p>
+  </div>
+  <table class="paper-meta">
+    <tr>
+      <td style="width:55%">Name: ______________________________________</td>
+      <td style="width:20%">Section: ______________</td>
+      <td style="width:25%">Score: ________</td>
+    </tr>
+  </table>
+  <ol class="answer-grid">
+    {% for slot in paper.slots %}
+    <li><span class="slot-no">{{ slot }}.</span> ______________</li>
+    {% endfor %}
+  </ol>
+  <p class="small">
+    Essay questions and shown working are answered on the paper itself.
+  </p>
+</div>
+{% endif %}
+
+{% if show_key %}
+<div class="sheet paper paper-break">
+  <div class="sheet-head">
+    <p class="title">
+      ANSWER KEY &mdash; {{ exam.title }}{% if paper.label %} (Set {{ paper.label }}){% endif %}
+    </p>
+  </div>
+  <table class="paper-meta">
+    <tr>
+      <td><strong>{{ course.code }}</strong> &mdash; {{ course.title }}</td>
+      <td><strong>Total:</strong> {{ total_points|num }} points</td>
+    </tr>
+  </table>
+  <ol class="answer-grid wide">
+    {% for row in paper.rows %}
+    <li>
+      <span class="slot-no">{{ row.number }}.</span>
+      {{ row.key }}
+      <span class="small">[{{ row.question.effective_points|num }}]</span>
+    </li>
+    {% endfor %}
+  </ol>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

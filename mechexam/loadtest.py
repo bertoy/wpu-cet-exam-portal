@@ -15,7 +15,6 @@ matters — how many requests failed.
 from __future__ import annotations
 
 import argparse
-import json
 import random
 import statistics
 import sys
@@ -90,7 +89,7 @@ class Student:
 
     def start_exam(self, exam_id: int, pin: str) -> bool:
         self._call("GET", f"/take/{exam_id}/start", label="start_page")
-        status, _, _ = self._call(
+        status, body, _ = self._call(
             "POST", f"/take/{exam_id}/start", {"access_code": pin},
             label="start_post",
         )
@@ -103,7 +102,7 @@ class Student:
         # carries the attempt id.
         match = re.search(r"/take/attempt/(\d+)", self.final_url or "")
         if not match:
-            match = re.search(r"/take/attempt/(\d+)", html)
+            match = re.search(r"/take/attempt/(\d+)", body or "")
         if not match:
             return False
         self.attempt_id = int(match.group(1))

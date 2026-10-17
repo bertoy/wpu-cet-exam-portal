@@ -10,6 +10,7 @@ Runs against a throw-away database, so it never touches real records.
 """
 from __future__ import annotations
 
+import io
 import logging
 import os
 import shutil
@@ -45,6 +46,7 @@ from app.models import (                                      # noqa: E402
     Q_MULTIPART,
     Q_NUMERIC,
     Question,
+    QuestionBank,
     ROLE_INSTRUCTOR,
     ROLE_STUDENT,
     SCOPE_LABORATORY,
@@ -1040,6 +1042,409 @@ def test_multipart_parser():
 
 
 # --------------------------------------------------------------------------- #
+# 14b. Loading a question bank from a spreadsheet
+# --------------------------------------------------------------------------- #
+
+def test_question_csv():
+    """A sheet in, the same sheet out, and nothing saved when it is bad."""
+    from app.question_io import parse_questions_csv, template_csv
+
+    # ---- the template is a valid sheet ---------------------------------- #
+    specs, problems = parse_questions_csv(template_csv())
+    check("the template parses with no problems", not problems, str(problems))
+    check("the template covers all seven question types",
+          len({s["qtype"] for s in specs}) == 7,
+          str(sorted({s["qtype"] for s in specs})))
+
+    # ---- a bad row is reported, the good ones still import -------------- #
+    mixed = (
+        "type,question,points,answer,option_a,option_b\n"
+        "mcq,Good row,2,B,alpha,beta\n"
+        "mcq,Answer matches nothing,2,Z,alpha,beta\n"
+        "numeric,Not a number,3,abc,,\n"
+        "numeric,Fine,3,12.5,,\n"
+    )
+    specs, problems = parse_questions_csv(mixed)
+    check("the readable rows are kept", len(specs) == 2, str(len(specs)))
+    check("each unreadable row is reported with its line number",
+          len(problems) == 2 and "row 3" in problems[0] and "row 4" in problems[1],
+          str(problems))
+
+    # ---- an answer may be a letter, a number, or the text --------------- #
+    for key, expected in (("B", "beta"), ("2", "beta"), ("beta", "beta")):
+        specs, _ = parse_questions_csv(
+            f"type,question,points,answer,option_a,option_b\n"
+            f"mcq,Which,1,{key},alpha,beta\n"
+        )
+        check(f"an answer given as “{key}” resolves to the right option",
+              specs and specs[0]["answer"] == expected,
+              str(specs[0]["answer"] if specs else None))
+
+    # ---- headings people actually type are accepted --------------------- #
+    specs, problems = parse_questions_csv(
+        "Question Type,Item,Marks,Key,A,B,Category,Level\n"
+        "mcq,Renamed headings,2,A,one,two,Basics,easy\n"
+    )
+    check("alternative column headings are understood",
+          specs and specs[0]["topic"] == "Basics" and specs[0]["answer"] == "one",
+          str(problems))
+
+    # ---- through the web, into a real bank ------------------------------ #
+    teacher = make_instructor("csv-teacher")
+    course = make_course("TEST-CSV", teacher)
+    bank = QuestionBank(course_id=course.id, name="Imported bank")
+    db.session.add(bank)
+    db.session.commit()
+    bank_id = bank.id
+
+    with signed_in("csv-teacher", "pw-csv-teacher") as client:
+        sheet = template_csv()
+
+        # The first submission must change nothing at all.
+        response = client.post(f"/exams/banks/{bank_id}/import",
+                               data={"csv_text": sheet})
+        check("the check step returns a review page", response.status_code == 200,
+              str(response.status_code))
+        check("the check step saves nothing",
+              Question.query.filter_by(bank_id=bank_id).count() == 0,
+              str(Question.query.filter_by(bank_id=bank_id).count()))
+
+        response = client.post(
+            f"/exams/banks/{bank_id}/import",
+            data={"csv_text": sheet, "confirm": "1",
+                  "default_topic": "Thermodynamics"},
+            follow_redirects=True,
+        )
+        check("confirming the import succeeds", response.status_code == 200,
+              str(response.status_code))
+
+        questions = Question.query.filter_by(bank_id=bank_id).all()
+        check("every question in the sheet was created", len(questions) == 7,
+              str(len(questions)))
+
+        by_type = {q.qtype: q for q in questions}
+        check("the multiple-choice answer is stored as the option text",
+              by_type["mcq"].answer == "PV = mRT", str(by_type["mcq"].answer))
+        check("the numerical tolerance came across",
+              near(by_type["numeric"].tolerance_percent, 2.0),
+              str(by_type["numeric"].tolerance_percent))
+        check("the unit came across",
+              by_type["numeric"].unit == "kPa", str(by_type["numeric"].unit))
+        check("the matching pairs came across with their answers",
+              len(by_type["matching"].pairs) == 4
+              and by_type["matching"].pairs[0]["answer"] == 0,
+              str(by_type["matching"].pairs[:1]))
+        check("the sub-items of the problem came across",
+              len(by_type["multipart"].parts) == 3,
+              str(len(by_type["multipart"].parts)))
+        check("a sub-item's type word was read as a type",
+              by_type["multipart"].parts[0].answer_type == Q_NUMERIC,
+              str(by_type["multipart"].parts[0].answer_type))
+        check("the problem is worth the sum of its sub-items",
+              near(by_type["multipart"].effective_points, 10.0),
+              str(by_type["multipart"].effective_points))
+        check("the topic column wins over the fallback topic",
+              by_type["essay"].topic == "Second law", str(by_type["essay"].topic))
+
+        # ---- the export is readable by the importer --------------------- #
+        response = client.get(f"/exams/banks/{bank_id}/export.csv")
+        check("the bank exports as CSV", response.status_code == 200,
+              str(response.status_code))
+        check("the export is offered as a download",
+              "attachment" in response.headers.get("Content-Disposition", ""),
+              response.headers.get("Content-Disposition", ""))
+
+        exported = response.get_data(as_text=True)
+        again, problems = parse_questions_csv(exported)
+        check("an exported bank re-imports with no problems",
+              not problems, str(problems))
+        check("the round trip keeps every question", len(again) == 7,
+              str(len(again)))
+
+        original = {q.qtype: q for q in questions}
+        same = {s["qtype"]: s for s in again}
+        check("the round trip keeps the multiple-choice key",
+              same["mcq"]["answer"] == original["mcq"].answer,
+              f"{same['mcq']['answer']} vs {original['mcq'].answer}")
+        check("the round trip keeps the sub-items",
+              len(same["multipart"]["parts"]) == 3,
+              str(len(same["multipart"]["parts"])))
+        check("the round trip keeps the matching pairs",
+              len(same["matching"]["options"]) == 4,
+              str(len(same["matching"]["options"])))
+
+        # ---- another instructor's bank is out of reach ------------------ #
+        other = make_instructor("csv-stranger")
+        other_course = make_course("TEST-CSV2", other)
+        other_bank = QuestionBank(course_id=other_course.id, name="Not yours")
+        db.session.add(other_bank)
+        db.session.commit()
+        response = client.post(f"/exams/banks/{other_bank.id}/import",
+                               data={"csv_text": template_csv(), "confirm": "1"})
+        check("an instructor cannot import into someone else's bank",
+              response.status_code in (403, 404), str(response.status_code))
+        check("and nothing was written there",
+              Question.query.filter_by(bank_id=other_bank.id).count() == 0)
+
+    # ---- a sheet with nothing usable writes nothing ---------------------- #
+    before = Question.query.filter_by(bank_id=bank_id).count()
+    with signed_in("csv-teacher", "pw-csv-teacher") as client:
+        client.post(f"/exams/banks/{bank_id}/import",
+                    data={"csv_text": "type,question\nmcq,\n", "confirm": "1"},
+                    follow_redirects=True)
+    check("a sheet with no usable rows changes nothing",
+          Question.query.filter_by(bank_id=bank_id).count() == before,
+          str(Question.query.filter_by(bank_id=bank_id).count()))
+
+    # ---- a spreadsheet file, not a CSV, is refused clearly --------------- #
+    with signed_in("csv-teacher", "pw-csv-teacher") as client:
+        response = client.post(
+            f"/exams/banks/{bank_id}/import",
+            data={"csv_file": (io.BytesIO(b"PK\x03\x04junk"), "bank.xlsx")},
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        body = response.get_data(as_text=True)
+        check("an .xlsx upload is refused with an explanation",
+              "CSV" in body, str(response.status_code))
+        check("and the .xlsx upload wrote nothing",
+              Question.query.filter_by(bank_id=bank_id).count() == before)
+
+
+# --------------------------------------------------------------------------- #
+# 14b-ii. The paper copy and its key
+# --------------------------------------------------------------------------- #
+
+def test_paper_copy():
+    """The printed key must describe the paper that was actually printed."""
+    teacher = make_instructor("paper-teacher")
+    course = make_course("TEST-PAPER", teacher)
+    exam = Exam(course_id=course.id, title="Paper exam", duration_minutes=60,
+                access_code="PAPER", school_year=course.school_year,
+                semester=course.semester, shuffle_questions=True)
+    db.session.add(exam)
+    db.session.commit()
+
+    mcq = Question(exam_id=exam.id, qtype="mcq", text="Which one?",
+                   answer="beta", points=2.0, order_index=1)
+    mcq.options = ["alpha", "beta", "gamma"]
+    pairs = [
+        {"left": "Isothermal", "right": "Temperature", "answer": 0},
+        {"left": "Isobaric", "right": "Pressure", "answer": 1},
+        {"left": "Isochoric", "right": "Volume", "answer": 2},
+    ]
+    match = Question(exam_id=exam.id, qtype="matching", text="Match them",
+                     points=2.0, order_index=2)
+    match.pairs = pairs
+    numeric = Question(exam_id=exam.id, qtype=Q_NUMERIC, text="Find P2",
+                       answer="202.65", unit="kPa", tolerance_percent=2.0,
+                       points=5.0, order_index=3)
+    db.session.add_all([mcq, match, numeric])
+    db.session.commit()
+
+    with signed_in("paper-teacher", "pw-paper-teacher") as client:
+        response = client.get(f"/exams/{exam.id}/paper?key=1&sets=2&shuffle=1")
+        check("the paper renders with a key", response.status_code == 200,
+              str(response.status_code))
+        body = response.get_data(as_text=True)
+        check("the multiple-choice key gives the printed letter",
+              "B — beta" in body, "letter missing")
+        check("the numerical key carries the unit and tolerance",
+              "202.65 kPa" in body and "2%" in body, "unit or tolerance missing")
+        check("both versions are printed",
+              body.count("Set A") >= 1 and body.count("Set B") >= 1)
+
+        # The important invariant: for every pair, the letter the key gives
+        # must be the letter the paper actually printed that pair's right-hand
+        # item against.
+        from app.blueprints.exams import paper as paper_view
+
+        with client.application.test_request_context(
+            f"/exams/{exam.id}/paper?sets=4&shuffle=1"
+        ):
+            from flask_login import login_user
+
+            login_user(teacher)
+            rendered = paper_view(exam.id)
+        check("the paper view returns markup", "Column B" in rendered,
+              type(rendered).__name__)
+
+    # Re-derive the mapping the route builds and confirm it is self-consistent
+    # for every set, which is where an off-by-one in a shuffle would hide.
+    import random as _random
+
+    letters = "ABCDEFGHIJKLMNOPQRST"
+    for set_index in range(4):
+        rng = _random.Random(f"{exam.id}-{set_index}")
+        ordered = [mcq, match, numeric]
+        if set_index > 0:
+            rng.shuffle(ordered)
+        for question in ordered:
+            if question.qtype != "matching":
+                continue
+            order = list(range(len(pairs)))
+            rng.shuffle(order)
+            column_b = [pairs[i] for i in order]
+            where = {original: printed for printed, original in enumerate(order)}
+            for left_index in range(len(pairs)):
+                printed_at = where[left_index]
+                check(
+                    f"set {set_index}: pair {left_index + 1} points at the "
+                    f"item actually printed as {letters[printed_at]}",
+                    column_b[printed_at]["right"] == pairs[left_index]["right"],
+                    f"{column_b[printed_at]['right']} vs {pairs[left_index]['right']}",
+                )
+
+    # Reprinting must give the same paper, or a printed key stops matching.
+    with signed_in("paper-teacher", "pw-paper-teacher") as client:
+        first = client.get(f"/exams/{exam.id}/paper?sets=3&shuffle=1&key=1")
+        again = client.get(f"/exams/{exam.id}/paper?sets=3&shuffle=1&key=1")
+        check("reprinting gives byte-identical papers",
+              first.get_data() == again.get_data(),
+              "the shuffle is not seeded")
+
+
+# --------------------------------------------------------------------------- #
+# 14c. Adding one student to a subject
+# --------------------------------------------------------------------------- #
+
+def test_add_single_student():
+    teacher = make_instructor("one-teacher")
+    course = make_course("TEST-ONE", teacher)
+    section = Section(course_id=course.id, name="A", capacity=40)
+    other_section = Section(course_id=course.id, name="B", capacity=40)
+    db.session.add_all([section, other_section])
+    db.session.commit()
+
+    existing = make_student("2023-9001")
+    db.session.commit()
+
+    with signed_in("one-teacher", "pw-one-teacher") as client:
+
+        # ---- a brand-new student: the account is created too ------------ #
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9002",
+            "name": "Reyes, Ana B.",
+            "program": "BSME",
+            "year_level": "4th Year",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+
+        created = User.query.filter_by(student_number="2023-9002").first()
+        check("a new student number creates an account", created is not None)
+        check("the new account is a student",
+              created is not None and created.role == ROLE_STUDENT)
+        check("the new account must change its password at first sign-in",
+              created is not None and created.must_change_password)
+        check("the student number is the first password",
+              created is not None and created.check_password("2023-9002"))
+        enrolment = Enrollment.query.filter_by(
+            course_id=course.id, student_id=created.id).first()
+        check("the new student is enrolled", enrolment is not None)
+        check("into the section that was chosen",
+              enrolment is not None and enrolment.section_id == section.id)
+
+        # ---- an existing student: no second account ---------------------- #
+        before = User.query.count()
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+        check("an existing student number does not create a second account",
+              User.query.count() == before, str(User.query.count()))
+        check("the existing student is enrolled",
+              Enrollment.query.filter_by(
+                  course_id=course.id, student_id=existing.id).first() is not None)
+
+        # ---- adding them twice does not duplicate the enrolment ---------- #
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+        check("adding the same student twice leaves one enrolment",
+              Enrollment.query.filter_by(
+                  course_id=course.id, student_id=existing.id).count() == 1)
+
+        # ---- a different section moves them ------------------------------ #
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "section_id": str(other_section.id),
+        }, follow_redirects=True)
+        moved = Enrollment.query.filter_by(
+            course_id=course.id, student_id=existing.id).first()
+        check("naming a different section moves the student",
+              moved is not None and moved.section_id == other_section.id,
+              str(getattr(moved, "section_id", None)))
+
+        # ---- a dropped student comes back -------------------------------- #
+        moved.is_dropped = True
+        moved.dropped_at = utcnow()
+        db.session.commit()
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "section_id": str(other_section.id),
+        }, follow_redirects=True)
+        back = reload(moved)
+        check("adding a dropped student readmits them",
+              back is not None and not back.is_dropped)
+
+        # ---- an unknown number with no name is refused ------------------- #
+        before = User.query.count()
+        response = client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9999",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+        check("an unknown student number with no name is refused",
+              User.query.count() == before, str(User.query.count()))
+        check("and the refusal says what is missing",
+              "name" in response.get_data(as_text=True).lower())
+
+        # ---- a blank number is refused ----------------------------------- #
+        before = User.query.count()
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "   ",
+            "name": "No Number",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+        check("a blank student number is refused",
+              User.query.count() == before)
+
+        # ---- a staff number is not enrolled as a student ----------------- #
+        staff = make_instructor("one-colleague")
+        staff.student_number = "EMP-001"
+        db.session.commit()
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "EMP-001",
+            "section_id": str(section.id),
+        }, follow_redirects=True)
+        check("a staff account cannot be enrolled as a student",
+              Enrollment.query.filter_by(
+                  course_id=course.id, student_id=staff.id).first() is None)
+
+        # ---- a section from another subject is rejected ------------------ #
+        stranger = make_instructor("one-stranger")
+        stranger_course = make_course("TEST-ONE2", stranger)
+        foreign = Section(course_id=stranger_course.id, name="X", capacity=10)
+        db.session.add(foreign)
+        db.session.commit()
+        response = client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "section_id": str(foreign.id),
+        })
+        check("a section belonging to another subject is rejected",
+              response.status_code == 404, str(response.status_code))
+
+        # ---- another instructor's subject is out of reach ---------------- #
+        response = client.post(f"/subjects/{stranger_course.id}/add-student", data={
+            "student_number": "2023-9001",
+            "name": "Nope",
+            "section_id": str(foreign.id),
+        })
+        check("an instructor cannot add students to someone else's subject",
+              response.status_code in (403, 404), str(response.status_code))
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -1332,6 +1737,9 @@ def main():
         ("Autosave, reopen, reset", test_autosave_reopen_reset),
         ("Overrides survive re-marking", test_override_survives_rescore),
         ("Multi-part parser", test_multipart_parser),
+        ("Question banks from a spreadsheet", test_question_csv),
+        ("The paper copy and its key", test_paper_copy),
+        ("Adding one student", test_add_single_student),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

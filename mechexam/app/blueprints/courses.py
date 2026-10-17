@@ -537,6 +537,151 @@ def class_list(course_id: int):
     )
 
 
+def _find_or_create_student(
+    number: str, name: str, program: str = "", year_level: str = "",
+    password: str = "",
+) -> tuple[User, bool]:
+    """Look a student up by student number, creating the account if new.
+
+    Returns ``(student, created)``. The student number is the identity here,
+    not the name: two students may share a name, and a name may be typed
+    differently in two class lists, so matching on it would merge records that
+    belong to different people.
+    """
+    student = User.query.filter(
+        func.lower(User.student_number) == number.lower()
+    ).first()
+    if student is not None:
+        if program:
+            student.program = program
+        if year_level:
+            student.year_level = year_level
+        return student, False
+
+    username = number.replace(" ", "").lower()
+    if User.query.filter(func.lower(User.username) == username).first():
+        username = f"{username}-{int(datetime.now().timestamp()) % 10000}"
+    student = User(
+        username=username,
+        student_number=number,
+        name=name,
+        role=ROLE_STUDENT,
+        program=program,
+        year_level=year_level,
+    )
+    student.set_password(password or number)
+    student.must_change_password = True
+    db.session.add(student)
+    db.session.flush()
+    return student, True
+
+
+def _enrol_student(course: Course, student: User, section_id) -> str:
+    """Enrol, or bring back a dropped enrolment. Returns what happened."""
+    existing = Enrollment.query.filter_by(
+        course_id=course.id, student_id=student.id
+    ).first()
+    if existing is None:
+        db.session.add(
+            Enrollment(
+                course_id=course.id, student_id=student.id, section_id=section_id
+            )
+        )
+        return "enrolled"
+    if existing.is_dropped:
+        existing.is_dropped = False
+        existing.dropped_at = None
+        existing.section_id = section_id or existing.section_id
+        return "readmitted"
+    if section_id and existing.section_id != section_id:
+        existing.section_id = section_id
+        return "moved"
+    return "already"
+
+
+@bp.route("/<int:course_id>/add-student", methods=["POST"])
+@staff_required
+def add_student(course_id: int):
+    """Add one student to this subject, creating the account if they are new.
+
+    The common case on the subject page is a single late enrolee, and sending
+    an instructor to the administration pages to create an account and then
+    back here to enrol them is two detours for one student.
+    """
+    course = require_course(course_id)
+    section_id = request.form.get("section_id", type=int)
+    number = (request.form.get("student_number") or "").strip()
+    name = (request.form.get("name") or "").strip()
+
+    if not number:
+        flash("The student number is needed — it is what identifies them.",
+              "error")
+        return redirect(url_for("courses.detail", course_id=course.id))
+
+    if course.sections and not section_id:
+        flash("Choose which section this student goes into.", "error")
+        return redirect(url_for("courses.detail", course_id=course.id))
+
+    if section_id:
+        section = Section.query.filter_by(
+            id=section_id, course_id=course.id
+        ).first()
+        if section is None:
+            abort(404)
+
+    existing = User.query.filter(
+        func.lower(User.student_number) == number.lower()
+    ).first()
+    if existing is None and not name:
+        flash(
+            f"No student is on record with number {number}. Give the full name "
+            f"as well and the account will be created.",
+            "error",
+        )
+        return redirect(url_for("courses.detail", course_id=course.id))
+    if existing is not None and existing.role != ROLE_STUDENT:
+        flash(
+            f"{number} belongs to a staff account, not a student.", "error"
+        )
+        return redirect(url_for("courses.detail", course_id=course.id))
+
+    student, created = _find_or_create_student(
+        number,
+        name,
+        (request.form.get("program") or "").strip(),
+        (request.form.get("year_level") or "").strip(),
+        (request.form.get("password") or "").strip(),
+    )
+    outcome = _enrol_student(course, student, section_id)
+
+    log_action(
+        current_user, "student_added", "course", course.id,
+        f"{number} {outcome}{' (new account)' if created else ''}",
+    )
+    db.session.commit()
+
+    label = student.name or number
+    if outcome == "already":
+        flash(f"{label} is already enrolled in this subject.", "info")
+    elif outcome == "readmitted":
+        flash(f"{label} was dropped and is now back on the list.", "success")
+    elif outcome == "moved":
+        flash(f"{label} was moved to the chosen section.", "success")
+    elif created:
+        flash(
+            f"Created an account for {label} and enrolled them. The password "
+            f"is {'the one you set' if request.form.get('password') else 'their student number'}, "
+            f"and they must change it when they first sign in.",
+            "success",
+        )
+    else:
+        flash(f"{label} was already on record and is now enrolled.", "success")
+
+    return redirect(
+        url_for("courses.detail", course_id=course.id, section=section_id)
+    )
+
+
 @bp.route("/<int:course_id>/import-students", methods=["POST"])
 @staff_required
 def import_students(course_id: int):
@@ -581,49 +726,16 @@ def import_students(course_id: int):
         program = cells[2] if len(cells) > 2 else ""
         year_level = cells[3] if len(cells) > 3 else ""
 
-        student = User.query.filter(
-            func.lower(User.student_number) == number.lower()
-        ).first()
-        if student is None:
-            username = number.replace(" ", "").lower()
-            if User.query.filter(func.lower(User.username) == username).first():
-                username = f"{username}-{int(datetime.now().timestamp()) % 10000}"
-            student = User(
-                username=username,
-                student_number=number,
-                name=name,
-                role=ROLE_STUDENT,
-                program=program,
-                year_level=year_level,
-            )
-            student.set_password(default_password or number)
-            student.must_change_password = True
-            db.session.add(student)
-            db.session.flush()
+        student, was_created = _find_or_create_student(
+            number, name, program, year_level, default_password
+        )
+        if was_created:
             created += 1
-        else:
-            if program:
-                student.program = program
-            if year_level:
-                student.year_level = year_level
 
-        existing = Enrollment.query.filter_by(
-            course_id=course.id, student_id=student.id
-        ).first()
-        if existing is None:
-            db.session.add(
-                Enrollment(
-                    course_id=course.id, student_id=student.id, section_id=section_id
-                )
-            )
-            enrolled += 1
-        elif existing.is_dropped:
-            existing.is_dropped = False
-            existing.dropped_at = None
-            existing.section_id = section_id or existing.section_id
-            enrolled += 1
-        else:
+        if _enrol_student(course, student, section_id) == "already":
             skipped += 1
+        else:
+            enrolled += 1
 
     log_action(
         current_user, "students_imported", "course", course.id,
