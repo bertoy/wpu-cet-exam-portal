@@ -403,9 +403,16 @@ def autosave(attempt_id: int):
 def event(attempt_id: int):
     """Record an integrity event, and decide whether to submit.
 
-    The client tells us whether the window still had focus when it was hidden.
-    A screen that merely went to sleep keeps focus; a student who switched
-    apps does not.  Strict mode acts only on the latter.
+    Only one kind of event can end an exam: ``exit_confirmed``, which the
+    client sends when a student has come back after an absence too long to be
+    a locked screen, having already used up the exam's allowance.
+
+    Everything else is recorded and nothing more.  ``blur`` in particular is
+    never acted on: a phone locking its screen blurs the exam window exactly
+    as switching apps does, and an earlier version of this endpoint submitted
+    on a bare blur, which is why a student who merely let the screen time out
+    found the exam gone.  The decision now needs a duration, and a duration is
+    only known once the student is back.
     """
     attempt = _require_attempt(attempt_id)
     exam = attempt.exam
@@ -423,7 +430,7 @@ def event(attempt_id: int):
     )
 
     action = "none"
-    if kind in ("blur", "hidden") and exam.exit_mode == EXIT_STRICT:
+    if kind == "exit_confirmed" and exam.exit_mode == EXIT_STRICT:
         _store_answers(attempt, request.form)
         attempt.status = ATTEMPT_SUBMITTED
         attempt.submitted_at = utcnow()

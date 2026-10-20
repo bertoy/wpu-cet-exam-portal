@@ -58,6 +58,60 @@ def gradesheet(course_id: int):
     )
 
 
+@bp.route("/<int:course_id>/report-of-grades")
+@staff_required
+def report_of_grades(course_id: int):
+    """The registrar's own form, WPU-OSF-OSAS-OAR-09.
+
+    This is the sheet that is signed and filed, so it reproduces the printed
+    original rather than paraphrasing it: the same heading, the same six
+    columns, the same signature block and the same form number. The portal's
+    own grade sheet stays as it is — that one is for working, this one is for
+    submitting.
+
+    One programme per sheet, which is what a section is, so the sheet is
+    printed per section unless the subject has none.
+    """
+    course = require_course(course_id, manage=False)
+    section_id = request.args.get("section", type=int)
+    results = compute_class(course, section_id)
+
+    section = next((s for s in course.sections if s.id == section_id), None)
+
+    # The programme: the section's own, or whatever the class agrees on.
+    programme = section.program if section and section.program else ""
+    if not programme:
+        named = {s.student.program for s in results if s.student.program}
+        programme = named.pop() if len(named) == 1 else ""
+
+    instructor = course.owner
+    signature_name = (request.args.get("signed_by") or "").strip()
+    if not signature_name and instructor is not None:
+        signature_name = (instructor.name or instructor.username)
+
+    submitted_on = (request.args.get("submitted") or "").strip()
+
+    # The registrar writes the term as "Summer AY 2025-2026", not the portal's
+    # own "Summer, 2025-2026".
+    term = f"{course.semester} AY {course.school_year}".strip()
+
+    return render_template(
+        "reports/report_of_grades.html",
+        course=course,
+        results=results,
+        section=section,
+        sections=list(course.sections),
+        section_id=section_id,
+        programme=programme,
+        instructor=instructor,
+        signature_name=signature_name.upper(),
+        submitted_on=submitted_on or datetime.now().strftime("%B %-d, %Y"),
+        term=term,
+        rows_per_page=request.args.get("rows", type=int) or 22,
+        printed_on=datetime.now(),
+    )
+
+
 @bp.route("/<int:course_id>/class-list/print")
 @staff_required
 def class_list_print(course_id: int):

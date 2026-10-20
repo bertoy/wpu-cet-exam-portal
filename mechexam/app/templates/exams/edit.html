@@ -358,6 +358,31 @@
       </div>
 
       <div class="field-row">
+        <div class="field" style="flex:0 0 14rem">
+          <label for="lock_grace_seconds">A locked screen is forgiven for (seconds)</label>
+          <input type="number" id="lock_grace_seconds" name="lock_grace_seconds"
+                 min="15" max="600" value="{{ exam.lock_grace_seconds }}">
+          <p class="field-hint">
+            A phone locking its screen and a student opening another app look
+            identical to the browser, so the exam waits instead of guessing.
+            An absence shorter than this is recorded as an interruption and
+            never penalised. Make it longer than a phone's screen timeout —
+            90 seconds covers almost every handset.
+          </p>
+        </div>
+        <div class="field" style="flex:0 0 12rem">
+          <label for="exit_allowance">Longer absences forgiven</label>
+          <input type="number" id="exit_allowance" name="exit_allowance"
+                 min="0" max="10" value="{{ exam.exit_allowance }}">
+          <p class="field-hint">
+            How many longer absences are let through with a warning before the
+            setting above takes effect. Zero is unforgiving; one covers the
+            student whose phone rang.
+          </p>
+        </div>
+      </div>
+
+      <div class="field-row">
         <div class="field" style="flex:0 0 12rem">
           <label for="exit_grace_seconds">Grace period (seconds)</label>
           <input type="number" id="exit_grace_seconds" name="exit_grace_seconds"

@@ -471,6 +471,8 @@ def routes_for(client, role_label):
             f"/exams/{exam.id}", f"/exams/{exam.id}/monitor",
             f"/exams/{exam.id}/results", f"/exams/{exam.id}/analysis",
             f"/exams/attempts/{attempt.id}",
+            f"/reports/{course.id}/report-of-grades",
+            f"/reports/{course.id}/report-of-grades?section={section.id}&rows=15",
             f"/exams/{exam.id}/export.csv",
             f"/exams/{exam.id}/questions.csv",
             f"/exams/{exam.id}/preview",

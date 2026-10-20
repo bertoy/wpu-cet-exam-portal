@@ -11,7 +11,9 @@
     <h1>{{ course.code }} — {{ course.title }}</h1>
     <p class="page-sub">
       {{ course.term_label }} &middot; {{ course.units|num }} unit{{ '' if course.units == 1 else 's' }}
-      {%- if course.has_laboratory %} &middot; lecture and laboratory{% endif %}
+      {%- if course.has_laboratory %}
+        &middot; {{ course.lecture_share|num }}% lecture + {{ course.laboratory_share|num }}% laboratory
+      {%- endif %}
       {%- if course.owner %} &middot; {{ course.owner.display_name }}{% endif %}
     </p>
   </div>
@@ -30,6 +32,7 @@
   <a class="button" href="{{ url_for('courses.class_list', course_id=course.id) }}">Class list</a>
   <a class="button" href="{{ url_for('courses.attendance', course_id=course.id) }}">Attendance</a>
   <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">Grade sheet</a>
+  <a class="button" href="{{ url_for('reports.report_of_grades', course_id=course.id) }}">Report of Grades</a>
   <a class="button" href="{{ url_for('reports.summary', course_id=course.id) }}">Summary</a>
   <a class="button" href="{{ url_for('messages.compose', course=course.id, kind='announcement') }}">Announce</a>
   <form class="inline-form" method="post" action="{{ url_for('courses.release_grades', course_id=course.id) }}">
@@ -434,6 +437,24 @@
             <input type="number" id="section_capacity" name="capacity" min="0" value="40">
           </div>
         </div>
+        <div class="field">
+          <label for="section_program">Programme</label>
+          <input type="text" id="section_program" name="program"
+                 list="programme-names"
+                 placeholder="Bachelor of Science in Mechanical Engineering">
+          <datalist id="programme-names">
+            <option value="Bachelor of Science in Mechanical Engineering">
+            <option value="Bachelor of Science in Agricultural and Biosystems Engineering">
+            <option value="Bachelor of Science in Civil Engineering">
+            <option value="Bachelor of Science in Electrical Engineering">
+            <option value="Bachelor of Science in Electronics Engineering">
+            <option value="Bachelor of Science in Information Technology">
+          </datalist>
+          <p class="field-hint">
+            Written in full, as the registrar's Report of Grades prints it —
+            one programme per sheet.
+          </p>
+        </div>
         <button type="submit" class="button">Add section</button>
       </form>
     </div>
@@ -575,18 +596,47 @@ placeholder="2023-0001, Dela Cruz, Juan P., BSME, 4th Year
               final grade between lecture and laboratory.</span></span>
         </label>
 
-        <div class="field-row">
-          <div class="field">
-            <label for="lecture_share">Lecture share (%)</label>
-            <input type="number" id="lecture_share" name="lecture_share" step="1" min="0" max="100"
-                   value="{{ course.lecture_share|num }}">
+        <fieldset data-share-group>
+          <legend>How this subject's final grade is split</legend>
+          <p class="field-hint">
+            This belongs to <strong>{{ course.code }}</strong> alone. Each
+            subject carries its own split, so a laboratory-heavy subject and a
+            lecture-only one can sit side by side without either being wrong.
+            Changing it here re-computes this subject's grades and touches no
+            other.
+          </p>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="lecture_share">Lecture share (%)</label>
+              <input type="number" id="lecture_share" name="lecture_share"
+                     step="0.5" min="0" max="100" data-share="lecture"
+                     value="{{ course.lecture_share|num }}">
+            </div>
+            <div class="field">
+              <label for="laboratory_share">Laboratory share (%)</label>
+              <input type="number" id="laboratory_share" name="laboratory_share"
+                     step="0.5" min="0" max="100" data-share="laboratory"
+                     value="{{ course.laboratory_share|num }}"
+                     {{ 'disabled' if not course.has_laboratory }}>
+            </div>
+            <div class="field">
+              <span class="label-like">As it will be worked out</span>
+              <p class="mb0 mono" data-share-readout>&nbsp;</p>
+            </div>
           </div>
-          <div class="field">
-            <label for="laboratory_share">Laboratory share (%)</label>
-            <input type="number" id="laboratory_share" name="laboratory_share" step="1" min="0" max="100"
-                   value="{{ course.laboratory_share|num }}">
+
+          <div class="button-row">
+            <span class="small muted">Common splits:</span>
+            {% for lec, lab, note in [(67, 33, 'CET default'), (60, 40, ''),
+                                      (50, 50, ''), (75, 25, ''), (100, 0, 'no laboratory')] %}
+            <button type="button" class="button button-small" data-share-preset
+                    data-lecture="{{ lec }}" data-laboratory="{{ lab }}">
+              {{ lec }} / {{ lab }}{% if note %} <span class="tiny muted">({{ note }})</span>{% endif %}
+            </button>
+            {% endfor %}
           </div>
-        </div>
+        </fieldset>
 
         <div class="field">
           <label for="averaging_method">How each component is averaged</label>

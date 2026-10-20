@@ -145,7 +145,10 @@
 </div>
 {% else %}
 <div class="button-row mb2">
-  <a class="button button-primary" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">
+  <a class="button button-primary" href="{{ url_for('reports.report_of_grades', course_id=course.id) }}">
+    Report of Grades
+  </a>
+  <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">
     Open the grade sheet to print
   </a>
 </div>

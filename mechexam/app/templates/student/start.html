@@ -46,16 +46,28 @@
       </li>
       {% if exam.exit_mode == 'strict' %}
       <li style="color:var(--red-600)">
-        <strong>Leaving the exam submits it immediately.</strong> Switching to
-        another app, opening another tab, or closing the browser ends your
-        exam. Your screen going dark on its own does <em>not</em> — that is
-        recognised and allowed, so you will not be penalised for it.
+        <strong>Leaving the exam for more than
+        {{ exam.lock_grace_seconds }} seconds submits it.</strong>
+        Nothing is submitted while you are away, and nothing happens at all
+        until you come back — so if your screen simply locks, pick the phone
+        up and carry on.
+        {% if exam.exit_allowance %}
+          You will be warned the first
+          {{ 'time' if exam.exit_allowance == 1 else exam.exit_allowance ~ ' times' }}.
+        {% endif %}
+      </li>
+      <li>
+        A screen that goes dark on its own, an incoming call or a notification
+        does <strong>not</strong> end your exam. Come back inside
+        {{ exam.lock_grace_seconds }} seconds and it is recorded as an
+        interruption, nothing more.
       </li>
       {% elif exam.exit_mode == 'grace' %}
       <li style="color:var(--amber-600)">
-        <strong>If you leave the exam you have
-        {{ exam.exit_grace_seconds }} seconds to come back</strong> before it
-        is submitted for you. Your screen going dark on its own does not count.
+        <strong>If you are away for more than {{ exam.lock_grace_seconds }}
+        seconds</strong> you will have {{ exam.exit_grace_seconds }} seconds to
+        come back before the exam is submitted for you. A locked screen or a
+        short interruption does not count.
       </li>
       {% else %}
       <li>

@@ -780,20 +780,58 @@ def test_exit_modes():
         db.session.commit()
         return exam, student
 
-    # Strict: leaving submits at once.
+    # A locked phone is the case this whole mechanism exists for. The browser
+    # cannot tell it apart from an app switch, so none of the events that a
+    # lock produces -- a blur, the document hiding, a short absence -- may
+    # end an exam, even in the strictest mode.
     exam, student = fresh_exam("strict", "X-0001")
     with signed_in("X-0001", "X-0001") as client:
         client.post(f"/take/{exam.id}/start", data={"access_code": "EXIT"})
         attempt = Attempt.query.filter_by(exam_id=exam.id, student_id=student.id).first()
 
+        for kind, detail in (
+            ("blur", "window lost focus (not acted on)"),
+            ("hidden", "exam no longer on screen"),
+            ("interruption", "away 25s — within the allowance"),
+            ("screen_sleep", "display off"),
+            ("absence_forgiven", "away 200s — 1 of 1 forgiven"),
+        ):
+            client.post(f"/take/attempt/{attempt.id}/event",
+                        data={"kind": kind, "detail": detail})
+            attempt = reload(attempt)
+            check(f"strict mode does not submit on ‘{kind}’",
+                  attempt.status == ATTEMPT_IN_PROGRESS, attempt.status)
+
+        check("every one of those was still recorded for the instructor",
+              len(attempt.events) >= 5, str(len(attempt.events)))
+
+        # Only a confirmed exit ends it, and only the client can confirm one,
+        # because only the client knows how long the student was away.
         client.post(f"/take/attempt/{attempt.id}/event",
-                    data={"kind": "hidden", "detail": "switched apps"})
+                    data={"kind": "exit_confirmed", "detail": "away 240s"})
         attempt = reload(attempt)
-        check("strict mode submits when the student leaves",
+        check("a confirmed exit does submit in strict mode",
               attempt.status == ATTEMPT_SUBMITTED, attempt.status)
         check("the reason records that they left",
               (attempt.submit_reason or "").startswith("exit"),
               attempt.submit_reason)
+
+    # The lock allowance has sane bounds and a default long enough to cover a
+    # phone's screen timeout.
+    check("the lock allowance defaults to at least a minute",
+          exam.lock_grace_seconds >= 60, str(exam.lock_grace_seconds))
+
+    with signed_in("exit-teacher", "pw-exit-teacher") as client:
+        client.post(f"/exams/{exam.id}/settings", data={
+            "title": exam.title, "duration_minutes": "30",
+            "exit_mode": "strict", "lock_grace_seconds": "5000",
+            "exit_allowance": "99",
+        }, follow_redirects=True)
+        exam = reload(exam)
+        check("an absurd lock allowance is clamped, not stored",
+              exam.lock_grace_seconds <= 600, str(exam.lock_grace_seconds))
+        check("the forgiveness count is clamped too",
+              exam.exit_allowance <= 10, str(exam.exit_allowance))
 
     # Strict: a screen going to sleep must NOT submit.
     exam, student = fresh_exam("strict", "X-0002")
@@ -818,7 +856,7 @@ def test_exit_modes():
                 exam_id=exam.id, student_id=student.id
             ).first()
             client.post(f"/take/attempt/{attempt.id}/event",
-                        data={"kind": "hidden", "detail": "switched apps"})
+                        data={"kind": "exit_confirmed", "detail": "away 240s"})
             attempt = reload(attempt)
             check(f"{mode} mode does not submit on the server side",
                   attempt.status == ATTEMPT_IN_PROGRESS, attempt.status)
@@ -1445,6 +1483,175 @@ def test_add_single_student():
 
 
 # --------------------------------------------------------------------------- #
+# 14d. The lecture / laboratory split belongs to the subject
+# --------------------------------------------------------------------------- #
+
+def test_per_subject_shares():
+    """Two subjects with different splits must not influence each other."""
+    teacher = make_instructor("share-teacher")
+    heavy = make_course("TEST-LAB-HEAVY", teacher, laboratory=True)
+    light = make_course("TEST-LAB-LIGHT", teacher, laboratory=True)
+
+    heavy.lecture_share, heavy.laboratory_share = 40.0, 60.0
+    light.lecture_share, light.laboratory_share = 67.0, 33.0
+    db.session.commit()
+
+    student = make_student("2024-7001")
+    for course in (heavy, light):
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+    db.session.commit()
+
+    # The same marks in both: 90% on lecture, 60% on laboratory.
+    for course in (heavy, light):
+        lecture_item = add_item(course, SCOPE_LECTURE, "Written Works",
+                                "Quiz", 100.0)
+        lab_item = add_item(course, SCOPE_LABORATORY, "Written Works",
+                            "Lab quiz", 100.0)
+        set_score(lecture_item, student, 90.0)
+        set_score(lab_item, student, 60.0)
+    db.session.commit()
+
+    heavy_result = compute_student(heavy, student)
+    light_result = compute_student(light, student)
+
+    # 0.40(90) + 0.60(60) = 72.0 ; 0.67(90) + 0.33(60) = 80.1
+    check("a laboratory-heavy subject uses its own split",
+          near(heavy_result.final_percent, 72.0),
+          str(heavy_result.final_percent))
+    check("a lecture-heavy subject uses its own split",
+          near(light_result.final_percent, 80.1),
+          str(light_result.final_percent))
+    check("the two subjects give different grades from identical marks",
+          heavy_result.final_percent != light_result.final_percent)
+
+    # Changing one subject must leave the other exactly where it was.
+    before = compute_student(light, student).final_percent
+    with signed_in("share-teacher", "pw-share-teacher") as client:
+        client.post(f"/subjects/{heavy.id}/settings", data={
+            "title": heavy.title, "units": "4", "lec_units": "3",
+            "lab_units": "1", "has_laboratory": "1",
+            "lecture_share": "25", "laboratory_share": "75",
+            "averaging_method": "total_points",
+            "removal_low": "55", "removal_high": "59.99",
+        }, follow_redirects=True)
+
+    heavy = reload(heavy)
+    check("the subject's own split was saved",
+          near(heavy.lecture_share, 25.0) and near(heavy.laboratory_share, 75.0),
+          f"{heavy.lecture_share}/{heavy.laboratory_share}")
+    check("changing one subject leaves the other untouched",
+          near(compute_student(light, student).final_percent, before),
+          str(compute_student(light, student).final_percent))
+    # 0.25(90) + 0.75(60) = 67.5
+    check("and the changed subject re-computes from the new split",
+          near(compute_student(heavy, student).final_percent, 67.5),
+          str(compute_student(heavy, student).final_percent))
+
+    # Shares that do not add to 100 are normalised rather than rejected, so
+    # 7 and 3 means the same as 70 and 30.
+    heavy.lecture_share, heavy.laboratory_share = 7.0, 3.0
+    db.session.commit()
+    check("shares are read as a ratio, not as percentages that must total 100",
+          near(compute_student(heavy, student).final_percent, 81.0),
+          str(compute_student(heavy, student).final_percent))
+
+    # Both at zero would divide by nothing; the form refuses it.
+    with signed_in("share-teacher", "pw-share-teacher") as client:
+        client.post(f"/subjects/{heavy.id}/settings", data={
+            "title": heavy.title, "units": "4", "lec_units": "3",
+            "lab_units": "1", "has_laboratory": "1",
+            "lecture_share": "0", "laboratory_share": "0",
+            "averaging_method": "total_points",
+            "removal_low": "55", "removal_high": "59.99",
+        }, follow_redirects=True)
+    heavy = reload(heavy)
+    check("two zero shares are refused and reset, not stored",
+          (heavy.lecture_share or 0) + (heavy.laboratory_share or 0) > 0,
+          f"{heavy.lecture_share}/{heavy.laboratory_share}")
+
+
+# --------------------------------------------------------------------------- #
+# 14e. Subject colours and the dashboard's appearance
+# --------------------------------------------------------------------------- #
+
+def test_subject_colours():
+    from app.models import SUBJECT_COLOUR_NAMES
+
+    teacher = make_instructor("colour-teacher")
+    first = make_course("TEST-COL-1", teacher)
+    second = make_course("TEST-COL-2", teacher)
+
+    check("a subject with no colour chosen still has one",
+          first.tile_colour in SUBJECT_COLOUR_NAMES, first.tile_colour)
+    # The same code must always land on the same colour, on every machine and
+    # in every term — that stability is what makes a colour recognisable.
+    from app.models import Course as _Course
+    twin = _Course(code=first.code)
+    check("the same subject code always derives the same colour",
+          twin.tile_colour == first.tile_colour,
+          f"{twin.tile_colour} vs {first.tile_colour}")
+    check("a different code derives a different colour",
+          second.tile_colour != first.tile_colour or len(SUBJECT_COLOUR_NAMES) < 2,
+          f"{second.tile_colour} vs {first.tile_colour}")
+
+    with signed_in("colour-teacher", "pw-colour-teacher") as client:
+        client.post(f"/dashboard/subject/{first.id}/colour",
+                    data={"colour": "maroon"}, follow_redirects=True)
+        check("a chosen colour is kept", reload(first).colour == "maroon",
+              reload(first).colour)
+
+        client.post(f"/dashboard/subject/{first.id}/colour",
+                    data={"colour": "chartreuse"}, follow_redirects=True)
+        check("a colour that is not in the palette is refused, not stored",
+              reload(first).colour == "", repr(reload(first).colour))
+
+        client.post("/dashboard/appearance",
+                    data={"style": "seal", "size": "compact"},
+                    follow_redirects=True)
+        me = reload(teacher)
+        check("the dashboard background choice is kept",
+              me.dashboard_style == "seal", me.dashboard_style)
+        check("the tile size choice is kept",
+              me.dashboard_size == "compact", me.dashboard_size)
+
+        client.post("/dashboard/appearance",
+                    data={"style": "neon", "size": "enormous"},
+                    follow_redirects=True)
+        me = reload(teacher)
+        check("an unknown appearance is ignored rather than stored",
+              me.dashboard_style == "seal" and me.dashboard_size == "compact",
+              f"{me.dashboard_style}/{me.dashboard_size}")
+
+        response = client.get("/")
+        body = response.get_data(as_text=True)
+        check("the dashboard renders the subject tiles",
+              "tile-code" in body and "TEST-COL-1" in body)
+
+    # Another instructor cannot repaint a subject that is not theirs.
+    stranger = make_instructor("colour-stranger")
+    theirs = make_course("TEST-COL-3", stranger)
+    with signed_in("colour-teacher", "pw-colour-teacher") as client:
+        response = client.post(f"/dashboard/subject/{theirs.id}/colour",
+                               data={"colour": "gold"})
+        check("an instructor cannot recolour someone else's subject",
+              response.status_code in (403, 404), str(response.status_code))
+        check("and the colour is unchanged", reload(theirs).colour in (None, ""))
+
+    # No two subjects on one dashboard should look the same.
+    codes = [f"TEST-HUE-{n}" for n in range(8)]
+    made = [make_course(code, teacher) for code in codes]
+    db.session.commit()
+    with signed_in("colour-teacher", "pw-colour-teacher") as client:
+        body = client.get("/").get_data(as_text=True)
+    import re as _re
+    shown = _re.findall(r'class="tile c-([a-z]+)"', body)
+    check("every subject got a tile", len(shown) >= len(made), str(len(shown)))
+    check("no two tiles share a colour",
+          len(set(shown)) == len(shown) or len(shown) > len(SUBJECT_COLOUR_NAMES),
+          str(shown))
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -1740,6 +1947,8 @@ def main():
         ("Question banks from a spreadsheet", test_question_csv),
         ("The paper copy and its key", test_paper_copy),
         ("Adding one student", test_add_single_student),
+        ("Lecture/laboratory split per subject", test_per_subject_shares),
+        ("Subject colours and appearance", test_subject_colours),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

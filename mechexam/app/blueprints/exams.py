@@ -138,6 +138,12 @@ def create():
             shuffle_options=bool(request.form.get("shuffle_options")),
             exit_mode=request.form.get("exit_mode") or EXIT_STRICT,
             exit_grace_seconds=request.form.get("exit_grace_seconds", type=int) or 180,
+            lock_grace_seconds=_bounded(
+                request.form.get("lock_grace_seconds", type=int), 90, 15, 600
+            ),
+            exit_allowance=_bounded(
+                request.form.get("exit_allowance", type=int), 1, 0, 10
+            ),
             block_paste=bool(request.form.get("block_paste")),
             allow_calculator=bool(request.form.get("allow_calculator")),
             allow_backtrack=bool(request.form.get("allow_backtrack")),
@@ -174,6 +180,13 @@ def _linkable_items(course_id: int):
         .order_by(GradeComponent.order_index, GradeItem.order_index)
         .all()
     )
+
+
+def _bounded(value, fallback: int, low: int, high: int) -> int:
+    """Keep a submitted number inside the range the setting makes sense in."""
+    if value is None:
+        value = fallback
+    return max(low, min(high, int(value)))
 
 
 def _require_exam(exam_id: int) -> Exam:
@@ -244,6 +257,10 @@ def update_settings(exam_id: int):
     exam.shuffle_options = bool(form.get("shuffle_options"))
     exam.exit_mode = form.get("exit_mode") or EXIT_STRICT
     exam.exit_grace_seconds = form.get("exit_grace_seconds", type=int) or 180
+    exam.lock_grace_seconds = _bounded(
+        form.get("lock_grace_seconds", type=int), 90, 15, 600
+    )
+    exam.exit_allowance = _bounded(form.get("exit_allowance", type=int), 1, 0, 10)
     exam.block_paste = bool(form.get("block_paste"))
     exam.allow_calculator = bool(form.get("allow_calculator"))
     exam.allow_backtrack = bool(form.get("allow_backtrack"))
@@ -303,6 +320,8 @@ def duplicate(exam_id: int):
         shuffle_options=exam.shuffle_options,
         exit_mode=exam.exit_mode,
         exit_grace_seconds=exam.exit_grace_seconds,
+        lock_grace_seconds=exam.lock_grace_seconds,
+        exit_allowance=exam.exit_allowance,
         block_paste=exam.block_paste,
         allow_calculator=exam.allow_calculator,
         allow_backtrack=exam.allow_backtrack,

@@ -435,6 +435,56 @@
 
   /* ---- boot ------------------------------------------------------------- */
 
+
+  /* ---- the lecture / laboratory split ----------------------------------- */
+
+  /* The two shares are normalised when the grade is worked out, so 70 and 30
+     and 7 and 3 mean the same thing. That is convenient but not obvious, so
+     the readout says what the numbers will actually come to. */
+  function initGradeShares() {
+    var group = document.querySelector("[data-share-group]");
+    if (!group) return;
+
+    var lecture = group.querySelector('[data-share="lecture"]');
+    var laboratory = group.querySelector('[data-share="laboratory"]');
+    var readout = group.querySelector("[data-share-readout]");
+    if (!lecture || !laboratory || !readout) return;
+
+    function show() {
+      var lec = parseFloat(lecture.value) || 0;
+      var lab = laboratory.disabled ? 0 : (parseFloat(laboratory.value) || 0);
+      var total = lec + lab;
+
+      if (total <= 0) {
+        readout.textContent = "—";
+        readout.className = "mb0 mono muted";
+        return;
+      }
+      var lecPct = Math.round((lec / total) * 1000) / 10;
+      var labPct = Math.round((lab / total) * 1000) / 10;
+      readout.textContent = lecPct + "% lecture + " + labPct + "% laboratory";
+      readout.className = "mb0 mono" + (Math.abs(total - 100) > 0.01 ? " muted" : "");
+      if (Math.abs(total - 100) > 0.01) {
+        readout.textContent += "  (yours add to " + total + ")";
+      }
+    }
+
+    lecture.addEventListener("input", show);
+    laboratory.addEventListener("input", show);
+
+    var presets = group.querySelectorAll("[data-share-preset]");
+    for (var i = 0; i < presets.length; i++) {
+      presets[i].addEventListener("click", function (e) {
+        var button = e.currentTarget;
+        lecture.value = button.getAttribute("data-lecture");
+        laboratory.value = button.getAttribute("data-laboratory");
+        show();
+      });
+    }
+
+    show();
+  }
+
   function boot() {
     initSidebar();
     initClock();
@@ -447,6 +497,7 @@
     initDependentSelects();
     initQuestionTypes();
     initDirtyGuard();
+    initGradeShares();
     initFlashes();
     initServiceWorker();
     initInstallPrompt();

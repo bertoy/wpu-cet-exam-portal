@@ -271,9 +271,13 @@
   <summary>What happened during the exam <span class="tail">{{ attempt.events|length }} events</span></summary>
   <div class="panel-body">
     <p class="small muted">
-      A screen going to sleep is recorded but never held against the student —
-      a phone whose backlight times out looks identical to a tab switch to the
-      browser, and this tells them apart.
+      A phone locking its screen and a student opening another app are
+      indistinguishable to a browser, so the exam does not guess: it measures
+      how long the student was gone. Anything shorter than this exam's
+      {{ attempt.exam.lock_grace_seconds }}-second allowance is an
+      interruption and is never held against them. Only a longer absence,
+      after the allowance is used up, ends an exam — and never while the
+      student is away.
     </p>
     <table class="data table-compact">
       <thead><tr><th>Time</th><th>What</th><th>Detail</th></tr></thead>
@@ -282,9 +286,11 @@
         <tr>
           <td class="tiny nowrap">{{ event.created_at|dt('%H:%M:%S') }}</td>
           <td class="small">
-            {% if event.kind == 'screen_sleep' %}
+            {% if event.kind in ('screen_sleep', 'interruption') %}
               <span class="pill pill-info">{{ event.label }}</span>
-            {% elif event.kind in ('hidden', 'blur', 'paste') %}
+            {% elif event.kind in ('hidden', 'blur') %}
+              <span class="pill">{{ event.label }}</span>
+            {% elif event.kind in ('absence_forgiven', 'exit', 'exit_confirmed', 'paste') %}
               <span class="pill pill-removal">{{ event.label }}</span>
             {% elif event.kind == 'auto_submit' %}
               <span class="pill pill-fail">{{ event.label }}</span>

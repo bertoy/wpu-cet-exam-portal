@@ -9,15 +9,23 @@
 </div>
 
 <div class="page-head">
+  <img class="page-crest" src="{{ asset('img/wpu-seal.png') }}" alt="" aria-hidden="true">
   <div class="grow">
     <h1>{{ course.code }} — {{ course.title }}</h1>
     <p class="page-sub">
       {{ course.term_label }} &middot; {{ results|length }} student{{ '' if results|length == 1 else 's' }}
       &middot; {{ 'total points ÷ total possible' if course.averaging_method == 'total_points'
                   else "average of each activity's percentage" }}
+      {%- if course.has_laboratory %}
+        &middot; {{ course.lecture_share|num }}% lecture + {{ course.laboratory_share|num }}% laboratory
+      {%- endif %}
     </p>
   </div>
   <div class="button-row">
+    <a class="button button-gold"
+       href="{{ url_for('reports.report_of_grades', course_id=course.id, section=section_id) }}">
+      Report of Grades
+    </a>
     <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
       Grade sheet
     </a>

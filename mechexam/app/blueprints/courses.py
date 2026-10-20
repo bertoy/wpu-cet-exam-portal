@@ -155,8 +155,28 @@ def settings(course_id: int):
     course.averaging_method = (
         form.get("averaging_method") or "total_points"
     )
-    course.lecture_share = form.get("lecture_share", type=float) or 67.0
-    course.laboratory_share = form.get("laboratory_share", type=float) or 33.0
+    # The lecture and laboratory shares belong to the subject, not the portal:
+    # ES 105A and a laboratory-heavy subject do not split the same way, and
+    # one figure for the whole college would be wrong for most of it. The
+    # portal-wide numbers are only the starting point for a new subject.
+    lecture_share = form.get("lecture_share", type=float)
+    laboratory_share = form.get("laboratory_share", type=float)
+    if lecture_share is not None:
+        course.lecture_share = max(0.0, min(100.0, lecture_share))
+    if laboratory_share is not None:
+        course.laboratory_share = max(0.0, min(100.0, laboratory_share))
+
+    if course.has_laboratory:
+        total_share = (course.lecture_share or 0.0) + (course.laboratory_share or 0.0)
+        if total_share <= 0:
+            flash(
+                "The lecture and laboratory shares cannot both be zero — "
+                "the final grade would have nothing to come from. Reset to "
+                "67 and 33.",
+                "error",
+            )
+            course.lecture_share, course.laboratory_share = 67.0, 33.0
+
     course.removal_low = form.get("removal_low", type=float) or 55.0
     course.removal_high = form.get("removal_high", type=float) or 59.99
 
@@ -224,6 +244,7 @@ def section_add(course_id: int):
             schedule=(request.form.get("schedule") or "").strip(),
             room=(request.form.get("room") or "").strip(),
             capacity=request.form.get("capacity", type=int) or 0,
+            program=(request.form.get("program") or "").strip(),
         )
     )
     log_action(current_user, "section_added", "course", course.id, name)
@@ -259,6 +280,7 @@ def section_edit(course_id: int, section_id: int):
     section.schedule = (request.form.get("schedule") or "").strip()
     section.room = (request.form.get("room") or "").strip()
     section.capacity = request.form.get("capacity", type=int) or 0
+    section.program = (request.form.get("program") or "").strip()
     db.session.commit()
     flash("Section updated.", "success")
     return redirect(url_for("courses.detail", course_id=course.id))

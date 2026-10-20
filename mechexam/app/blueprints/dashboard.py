@@ -1,7 +1,16 @@
 """The landing page, one per role."""
 from __future__ import annotations
 
-from flask import Blueprint, render_template, send_from_directory, current_app, jsonify
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from ..extensions import db
@@ -14,12 +23,14 @@ from ..models import (
     Message,
     Setting,
     Submission,
+    SUBJECT_COLOURS,
+    SUBJECT_COLOUR_NAMES,
     User,
     ROLE_INSTRUCTOR,
     ROLE_STUDENT,
     utcnow,
 )
-from ..security import visible_courses
+from ..security import require_course, visible_courses
 
 bp = Blueprint("dashboard", __name__)
 
@@ -99,6 +110,49 @@ def _staff_dashboard(courses):
         .all()
     )
 
+    # Live counts per subject, so a tile says something the title does not.
+    roster_counts = {}
+    exam_counts = {}
+    if course_ids:
+        for course_id, count in (
+            db.session.query(Enrollment.course_id, db.func.count(Enrollment.id))
+            .filter(Enrollment.course_id.in_(course_ids),
+                    Enrollment.is_dropped.is_(False))
+            .group_by(Enrollment.course_id)
+            .all()
+        ):
+            roster_counts[course_id] = count
+        for course_id, count in (
+            db.session.query(Exam.course_id, db.func.count(Exam.id))
+            .filter(Exam.course_id.in_(course_ids))
+            .group_by(Exam.course_id)
+            .all()
+        ):
+            exam_counts[course_id] = count
+
+    open_by_course = {e.course_id for e in open_exams}
+
+    # A colour derived from the subject code is stable but can collide, and
+    # two near-identical tiles side by side defeat the whole idea. Anything
+    # the instructor chose is honoured exactly; the rest are nudged to the
+    # next free colour so no two tiles on screen look the same.
+    taken = {c.colour for c in courses if c.colour in SUBJECT_COLOUR_NAMES}
+    tile_colours = {}
+    for course in courses:
+        if course.colour in SUBJECT_COLOUR_NAMES:
+            tile_colours[course.id] = course.colour
+            continue
+        wanted = course.tile_colour
+        start = SUBJECT_COLOUR_NAMES.index(wanted)
+        for step in range(len(SUBJECT_COLOUR_NAMES)):
+            candidate = SUBJECT_COLOUR_NAMES[(start + step) % len(SUBJECT_COLOUR_NAMES)]
+            if candidate not in taken:
+                break
+        else:                       # more subjects than colours; repeats are fine
+            candidate = wanted
+        taken.add(candidate)
+        tile_colours[course.id] = candidate
+
     return render_template(
         "dashboard/staff.html",
         courses=courses,
@@ -106,7 +160,48 @@ def _staff_dashboard(courses):
         stats=stats,
         announcements=announcements,
         recent_submissions=recent_submissions,
+        roster_counts=roster_counts,
+        exam_counts=exam_counts,
+        open_by_course=open_by_course,
+        subject_colours=SUBJECT_COLOURS,
+        tile_colours=tile_colours,
+        board_style=current_user.dashboard_style or "tinted",
+        board_size=current_user.dashboard_size or "comfortable",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Making the dashboard your own
+# --------------------------------------------------------------------------- #
+
+@bp.route("/dashboard/subject/<int:course_id>/colour", methods=["POST"])
+@login_required
+def set_colour(course_id: int):
+    """Give a subject its colour.
+
+    The colour belongs to the subject rather than to whoever is looking, so
+    an instructor and the administrator see the same tile — which is the
+    point, since the colour is how a subject is recognised.
+    """
+    course = require_course(course_id)
+    colour = (request.form.get("colour") or "").strip().lower()
+    course.colour = colour if colour in SUBJECT_COLOUR_NAMES else ""
+    db.session.commit()
+    return redirect(request.referrer or url_for("dashboard.index"))
+
+
+@bp.route("/dashboard/appearance", methods=["POST"])
+@login_required
+def appearance():
+    """How this person wants their own dashboard to look."""
+    style = (request.form.get("style") or "").strip().lower()
+    if style in ("plain", "tinted", "seal"):
+        current_user.dashboard_style = style
+    size = (request.form.get("size") or "").strip().lower()
+    if size in ("compact", "comfortable", "roomy"):
+        current_user.dashboard_size = size
+    db.session.commit()
+    return redirect(request.referrer or url_for("dashboard.index"))
 
 
 def _student_dashboard(courses):

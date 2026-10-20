@@ -155,6 +155,10 @@ class User(UserMixin, db.Model):
     rank = db.Column(db.String(80), default="")             # for instructors
     is_enabled = db.Column(db.Boolean, nullable=False, default=True)
     must_change_password = db.Column(db.Boolean, nullable=False, default=False)
+    # How this person likes their own dashboard: the tile size and whether the
+    # page carries a tint or the department seal behind it.
+    dashboard_style = db.Column(db.String(20), default="tinted")
+    dashboard_size = db.Column(db.String(20), default="comfortable")
     reset_code = db.Column(db.String(32))
     theme = db.Column(db.String(16), default="system")
 
@@ -255,6 +259,23 @@ class StudentYearStatus(db.Model):
 # Subjects, sections, enrolment
 # --------------------------------------------------------------------------- #
 
+SUBJECT_COLOURS = (
+    ("navy", "Navy"),
+    ("teal", "Teal"),
+    ("forest", "Forest"),
+    ("olive", "Olive"),
+    ("gold", "Gold"),
+    ("amber", "Amber"),
+    ("rust", "Rust"),
+    ("maroon", "Maroon"),
+    ("plum", "Plum"),
+    ("indigo", "Indigo"),
+    ("slate", "Slate"),
+    ("sea", "Sea"),
+)
+SUBJECT_COLOUR_NAMES = [key for key, _ in SUBJECT_COLOURS]
+
+
 class Course(db.Model):
     __tablename__ = "course"
 
@@ -262,6 +283,12 @@ class Course(db.Model):
     code = db.Column(db.String(40), nullable=False, index=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, default="")
+
+    # A subject's colour, so a term's worth of them can be told apart at a
+    # glance on the dashboard. Stored as a palette name rather than a hex
+    # value: the actual colours then follow the light and dark themes instead
+    # of being burned in at the moment somebody picked one.
+    colour = db.Column(db.String(20), default="")
 
     units = db.Column(db.Float, default=3.0)
     lec_units = db.Column(db.Float, default=3.0)
@@ -303,6 +330,20 @@ class Course(db.Model):
     @property
     def term_label(self) -> str:
         return f"{self.semester}, {self.school_year}"
+
+    @property
+    def tile_colour(self) -> str:
+        """The subject's colour, chosen if set and derived if not.
+
+        A colour nobody picked is still better than twelve identical cards, so
+        an unset subject takes one from its own code. The same code always
+        lands on the same colour, which is what makes it useful: ME 412 is the
+        same shade every term and on every machine.
+        """
+        if self.colour in SUBJECT_COLOUR_NAMES:
+            return self.colour
+        seed = sum(ord(ch) for ch in (self.code or "")) + len(self.code or "")
+        return SUBJECT_COLOUR_NAMES[seed % len(SUBJECT_COLOUR_NAMES)]
 
     def active_enrollments(self, section_id: int | None = None):
         q = (
@@ -349,6 +390,10 @@ class Section(db.Model):
     schedule = db.Column(db.String(160), default="")
     room = db.Column(db.String(80), default="")
     capacity = db.Column(db.Integer, default=0)
+    # The registrar's Report of Grades names one programme per sheet, and a
+    # section is exactly one programme's block of a subject -- BSABE 2-A is
+    # Agricultural and Biosystems Engineering whatever else the subject serves.
+    program = db.Column(db.String(160), default="")
     created_at = db.Column(db.DateTime, default=utcnow)
 
     @property
@@ -505,6 +550,13 @@ class FinalGrade(db.Model):
     grade = db.Column(db.String(10))
     remark = db.Column(db.String(40))
 
+    # The registrar's form has a Completion Grade column for a student who was
+    # marked INC and has since completed the requirement. It is recorded
+    # rather than computed, because completing is an event outside the
+    # gradebook.
+    completion_grade = db.Column(db.String(10), default="")
+    completion_note = db.Column(db.String(160), default="")
+
     removal_status = db.Column(db.String(20), default="")   # qualified|passed|failed
     removal_percent = db.Column(db.Float)
     pre_removal_grade = db.Column(db.String(10))
@@ -632,6 +684,17 @@ class Exam(db.Model):
     shuffle_options = db.Column(db.Boolean, nullable=False, default=True)
     exit_mode = db.Column(db.String(20), nullable=False, default=EXIT_STRICT)
     exit_grace_seconds = db.Column(db.Integer, nullable=False, default=180)
+
+    # A locked phone and a student opening another app look identical to a web
+    # page: both hide the document and both take the focus away.  Since the
+    # two cannot be told apart at the moment it happens, the exam does not
+    # try.  It waits.  An absence shorter than this is an interruption -- a
+    # screen that timed out, a call, a notification pulled down -- and is
+    # recorded without penalty.  Only an absence longer than this counts as
+    # leaving, by which time a locked phone would have been unlocked.
+    lock_grace_seconds = db.Column(db.Integer, nullable=False, default=90)
+    # How many such absences are forgiven outright before the exit mode acts.
+    exit_allowance = db.Column(db.Integer, nullable=False, default=1)
     block_paste = db.Column(db.Boolean, nullable=False, default=True)
     allow_calculator = db.Column(db.Boolean, nullable=False, default=True)
     allow_backtrack = db.Column(db.Boolean, nullable=False, default=True)
@@ -933,9 +996,13 @@ class IntegrityEvent(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
     LABELS = {
-        "blur": "Left the exam window",
-        "hidden": "Switched away / minimised",
+        "blur": "Window lost focus (not acted on)",
+        "hidden": "Exam left the screen",
         "screen_sleep": "Screen went to sleep (tolerated)",
+        "interruption": "Brief interruption (tolerated)",
+        "absence_forgiven": "Away a while — forgiven with a warning",
+        "exit": "Left the exam",
+        "exit_confirmed": "Left the exam (beyond the allowance)",
         "return": "Returned to the exam",
         "paste": "Paste attempt blocked",
         "copy": "Copy attempt",

@@ -13,10 +13,23 @@
       every change, before the page is hidden, and on submit.
 
    3. LEAVING IS NOT THE SAME AS THE SCREEN SLEEPING.  A phone whose backlight
-      times out fires exactly the same visibilitychange event as a student
-      switching to another app.  The difference is focus: a sleeping screen
-      keeps it, an app switch does not.  Strict mode acts only on the latter,
-      which is why a student is no longer punished for a dim screen.
+      times out and a student switching to another app produce the SAME
+      events: the document hides and the window loses focus.  An earlier
+      version of this file claimed focus told them apart.  On a desktop it
+      does; on a phone it does not -- locking an Android or iOS handset blurs
+      the window exactly as an app switch would -- so that check quietly
+      failed on the devices the students actually use, and a locked phone was
+      submitted as though the student had walked away.
+
+      Since the two cannot be distinguished at the moment they happen, this
+      version does not try to.  It waits.  Nothing is submitted while the
+      student is away.  Coming back quickly is an interruption -- a screen
+      that timed out, an incoming call, a notification pulled down -- and is
+      recorded without penalty.  Only an absence longer than the lock grace,
+      by which time a locked phone would have been picked up and unlocked,
+      counts as leaving, and even then the exam forgives the first few.
+      Retained focus is still used, but only one way: if the window kept
+      focus, it was certainly a sleeping screen.
 */
 (function () {
   "use strict";
@@ -33,6 +46,8 @@
     submitUrl: root.getAttribute("data-submit-url"),
     exitMode: root.getAttribute("data-exit-mode") || "off",
     graceSeconds: parseInt(root.getAttribute("data-grace-seconds") || "180", 10),
+    lockGraceSeconds: parseInt(root.getAttribute("data-lock-grace-seconds") || "90", 10),
+    exitAllowance: parseInt(root.getAttribute("data-exit-allowance") || "1", 10),
     autosaveSeconds: parseInt(root.getAttribute("data-autosave-seconds") || "20", 10),
     clockPollSeconds: parseInt(root.getAttribute("data-clock-poll-seconds") || "60", 10),
     blockPaste: root.getAttribute("data-block-paste") === "1",
@@ -53,6 +68,8 @@
   var pendingSave = false;
   var graceTimer = null;
   var graceLeft = 0;
+  var hiddenAt = 0;          // when the document was last hidden
+  var absences = 0;          // confirmed departures so far
 
   /* ---- helpers ---------------------------------------------------------- */
 
@@ -337,65 +354,117 @@
     post(config.eventUrl, body, onDone);
   }
 
-  /* The heart of it: did they leave, or did the screen go dark? */
-  function leftTheExam() {
-    // While the document is hidden, a window that still holds focus means the
-    // display turned itself off.  A window that has lost focus means
-    // something else is in front of the exam.
-    var stillFocused;
+  /* Did the window keep focus while hidden?  If so it was certainly the
+     screen going dark, because nothing came in front of the exam.  The
+     converse does NOT hold: a locked phone also loses focus, so a false here
+     proves nothing on its own. */
+  function keptFocus() {
     try {
-      stillFocused = document.hasFocus();
+      return document.hasFocus();
     } catch (e) {
-      stillFocused = false;
+      return false;
     }
-    return !stillFocused;
   }
 
+  /* Hiding decides nothing.  It saves the work, notes the time, and waits. */
   function onHidden() {
     if (finished) return;
 
     saveWithBeacon();
+    hiddenAt = Date.now();
 
-    if (!leftTheExam()) {
-      // Screen sleep -- recorded for the instructor, never punished.
+    if (keptFocus()) {
       report("screen_sleep", "display turned off, window kept focus");
       return;
     }
 
-    if (config.exitMode === "strict") {
-      report("hidden", "switched away from the exam", function (status, payload) {
-        if (payload && payload.action === "submitted" && payload.redirect) {
-          finished = true;
-          window.location.href = payload.redirect;
-        }
-      });
-      showOverlay(
-        "Your exam has been submitted",
-        "Leaving the exam submits it at once, as announced before you began.",
-        null
-      );
-      finished = true;
-      return;
-    }
-
-    if (config.exitMode === "grace") {
-      report("hidden", "switched away — grace period started");
-      startGrace();
-      return;
-    }
-
-    report("hidden", "switched away — recorded only");
+    // Could be a lock, could be another app.  Unknowable here, so the only
+    // honest record is that the exam stopped being visible.
+    report("hidden", "exam no longer on screen — waiting to see how long");
   }
 
+  /* Coming back is where the decision is actually made, because by then the
+     length of the absence is known. */
   function onVisible() {
     if (finished) return;
+
+    var awaySeconds = hiddenAt ? Math.round((Date.now() - hiddenAt) / 1000) : 0;
+    hiddenAt = 0;
+
     if (graceTimer) {
       clearInterval(graceTimer);
       graceTimer = null;
       hideOverlay();
-      report("return", "came back within the grace period");
     }
-    syncStatus();
+
+    if (awaySeconds <= 0) { syncStatus(); return; }
+
+    if (awaySeconds < Math.max(5, config.lockGraceSeconds)) {
+      // Short enough to be a screen lock, a call or a notification. A phone
+      // that was put down and picked up is not a student who walked out.
+      report(
+        "interruption",
+        "away " + awaySeconds + "s — within the allowance for a locked screen"
+      );
+      syncStatus();
+      return;
+    }
+
+    absences += 1;
+    if (absences <= Math.max(0, config.exitAllowance)) {
+      report(
+        "absence_forgiven",
+        "away " + awaySeconds + "s — " + absences + " of " +
+        config.exitAllowance + " forgiven"
+      );
+      showOverlay(
+        "You were away from the exam",
+        "You were away for " + awaySeconds + " seconds. That has been noted " +
+        "for your instructor. Leaving again may end your exam.",
+        null
+      );
+      setTimeout(hideOverlay, 6000);
+      syncStatus();
+      return;
+    }
+
+    confirmedExit(awaySeconds);
+  }
+
+  /* Only reached once an absence is too long to be a lock and the allowance
+     is used up.  The exam is submitted now, on return -- never while the
+     student is away and unable to see what happened. */
+  function confirmedExit(awaySeconds) {
+    if (config.exitMode === "off") {
+      report("exit", "away " + awaySeconds + "s — recorded only");
+      syncStatus();
+      return;
+    }
+
+    if (config.exitMode === "grace") {
+      report("exit", "away " + awaySeconds + "s — grace period started");
+      startGrace();
+      return;
+    }
+
+    report(
+      "exit_confirmed",
+      "away " + awaySeconds + "s after " + absences + " absences",
+      function (status, payload) {
+        if (payload && payload.action === "submitted" && payload.redirect) {
+          finished = true;
+          showOverlay(
+            "Your exam has been submitted",
+            "You were away from the exam for " + awaySeconds + " seconds. " +
+            "Leaving submits the exam, as announced before you began.",
+            null
+          );
+          setTimeout(function () {
+            window.location.href = payload.redirect;
+          }, 4000);
+        }
+      }
+    );
   }
 
   function startGrace() {
@@ -638,10 +707,12 @@
     });
 
     window.addEventListener("blur", function () {
-      // A blur with the page still visible is a second window or a dialog, not
-      // a departure; the visibilitychange handler owns the real decision.
+      // Never acted on. A phone locking, a notification, a second window and
+      // a student switching apps all blur the exam, so a blur on its own says
+      // nothing. It is recorded for the instructor's monitor and no more; the
+      // decision belongs to onVisible, which knows how long the absence was.
       if (document.hidden) return;
-      if (config.exitMode !== "off") report("blur", "exam window lost focus");
+      if (config.exitMode !== "off") report("blur", "window lost focus (not acted on)");
     });
 
     window.addEventListener("pagehide", saveWithBeacon);

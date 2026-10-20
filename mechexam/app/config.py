@@ -62,6 +62,20 @@ class Config:
     COLLEGE_NAME = os.environ.get("COLLEGE_NAME", "College of Engineering and Technology")
     DEPARTMENT_NAME = os.environ.get("DEPARTMENT_NAME", "Department of Mechanical Engineering")
     CAMPUS_NAME = os.environ.get("CAMPUS_NAME", "Puerto Princesa Campus, Palawan")
+    # What the registrar's own forms print, which is not the same string as
+    # the campus address used elsewhere.
+    REGISTRAR_OFFICE = os.environ.get(
+        "REGISTRAR_OFFICE", "OFFICE OF THE UNIVERSITY REGISTRAR"
+    )
+    REGISTRAR_CAMPUS = os.environ.get("REGISTRAR_CAMPUS", "Main")
+    UNIVERSITY_TAGLINE = os.environ.get(
+        "UNIVERSITY_TAGLINE", "A STRONG PARTNER FOR SUSTAINABLE DEVELOPMENT"
+    )
+    # The form's own control number, bottom right. Revised copies change it,
+    # so it is configurable rather than typed into the template.
+    REPORT_OF_GRADES_FORM = os.environ.get(
+        "REPORT_OF_GRADES_FORM", "WPU-OSF-OSAS-OAR-09 Rev.00 (08.15.25)"
+    )
     APP_NAME = os.environ.get("APP_NAME", "WPU-CET Examination & Gradebook Portal")
 
     # Google Drive -- service-account JSON from the environment only.

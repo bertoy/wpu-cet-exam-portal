@@ -90,47 +90,102 @@
 </div>
 {% endif %}
 
-<div class="grid grid-2">
-  <div class="card">
-    <div class="card-head">
-      <h2 class="grow">My subjects</h2>
-      <a class="button button-small" href="{{ url_for('courses.index') }}">See all</a>
-    </div>
-    <div class="card-body {{ 'flush' if courses }}">
-      {% if courses %}
-      <div class="table-wrap">
-        <table class="data">
-          <thead><tr><th>Code</th><th>Title</th><th class="mid">Lab</th><th></th></tr></thead>
-          <tbody>
-            {% for course in courses %}
-            <tr>
-              <td><a href="{{ url_for('courses.detail', course_id=course.id) }}"><strong>{{ course.code }}</strong></a></td>
-              <td class="small">{{ course.title }}
-                {% if course.is_finalised %}<span class="pill pill-info">finalised</span>{% endif %}
-              </td>
-              <td class="mid">{{ 'Yes' if course.has_laboratory else '—' }}</td>
-              <td class="right nowrap">
-                <a class="button button-small" href="{{ url_for('gradebook.course', course_id=course.id) }}">Grades</a>
-              </td>
-            </tr>
+{# ------------------------------------------------------------- subjects #}
+<div class="page-head">
+  <div class="grow">
+    <h2 class="mb0">My subjects</h2>
+    <p class="small muted mb0">
+      {{ semester }}, {{ school_year }} — every subject you teach this term.
+      Click one to open it; use <em>Colour</em> on a tile to change how it looks.
+    </p>
+  </div>
+  <div class="button-row">
+    <a class="button button-small" href="{{ url_for('courses.index') }}">See all</a>
+    <details class="tile-paint">
+      <summary class="button button-small">Appearance</summary>
+      <div class="appearance-pop">
+        <form method="post" action="{{ url_for('dashboard.appearance') }}">
+          <p class="label-like mb0">Behind the tiles</p>
+          <div class="button-row mb1">
+            {% for value, label in [('plain', 'Plain'), ('tinted', 'Tinted'), ('seal', 'Seal')] %}
+            <button type="submit" name="style" value="{{ value }}"
+                    class="button button-small {{ 'button-gold' if board_style == value }}">{{ label }}</button>
             {% endfor %}
-          </tbody>
-        </table>
+          </div>
+          <p class="label-like mb0">Tile size</p>
+          <div class="button-row mb1">
+            {% for value, label in [('compact', 'Compact'), ('comfortable', 'Comfortable'), ('roomy', 'Roomy')] %}
+            <button type="submit" name="size" value="{{ value }}"
+                    class="button button-small {{ 'button-gold' if board_size == value }}">{{ label }}</button>
+            {% endfor %}
+          </div>
+          <p class="label-like mb0">Light or dark</p>
+          <div class="button-row">
+            {% for value, label in [('light', 'Light'), ('dark', 'Dark'), ('system', 'Follow device')] %}
+            <button type="button" class="button button-small" data-theme-set="{{ value }}">{{ label }}</button>
+            {% endfor %}
+          </div>
+        </form>
       </div>
+    </details>
+  </div>
+</div>
+
+<div class="board-{{ board_style }}"
+     {% if board_style == 'seal' %}style="--board-seal:url('{{ asset('img/me-seal.png') }}')"{% endif %}>
+  {% if courses %}
+  <div class="tiles {{ board_size if board_size != 'comfortable' }}">
+    {% for course in courses %}
+    <article class="tile c-{{ tile_colours.get(course.id, course.tile_colour) }}">
+      <a class="tile-link" href="{{ url_for('courses.detail', course_id=course.id) }}">
+        <h3 class="tile-code">{{ course.code }}</h3>
+        <p class="tile-title">{{ course.title }}</p>
+        <p class="tile-meta">
+          <span class="tile-chip">{{ roster_counts.get(course.id, 0) }} student{{ '' if roster_counts.get(course.id, 0) == 1 else 's' }}</span>
+          <span class="tile-chip">{{ exam_counts.get(course.id, 0) }} exam{{ '' if exam_counts.get(course.id, 0) == 1 else 's' }}</span>
+          {% if course.has_laboratory %}
+            <span class="tile-chip">{{ course.lecture_share|num }}/{{ course.laboratory_share|num }}</span>
+          {% endif %}
+          {% if course.id in open_by_course %}<span class="tile-chip">exam running</span>{% endif %}
+          {% if course.is_finalised %}<span class="tile-chip">finalised</span>{% endif %}
+        </p>
+      </a>
+      <div class="tile-foot">
+        <a class="tile-act" href="{{ url_for('gradebook.course', course_id=course.id) }}">Grades</a>
+        <a class="tile-act" href="{{ url_for('exams.create', course=course.id) }}">New exam</a>
+        <span class="grow"></span>
+        <details class="tile-paint">
+          <summary>Colour</summary>
+          <form class="tile-swatches" method="post"
+                action="{{ url_for('dashboard.set_colour', course_id=course.id) }}">
+            {% for key, label in subject_colours %}
+            <button type="submit" name="colour" value="{{ key }}" title="{{ label }}"
+                    aria-label="{{ label }}"
+                    class="tile-swatch c-{{ key }} {{ 'on' if course.colour == key }}"
+                    style="background: var(--tile-bg)"></button>
+            {% endfor %}
+          </form>
+        </details>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><div class="card-body">
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#9776;</span>
+      <p>No subjects are assigned to you for {{ semester }}, {{ school_year }}.</p>
+      {% if current_user.is_superadmin %}
+        <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Add a subject</a>
       {% else %}
-      <div class="empty">
-        <span class="glyph" aria-hidden="true">&#9776;</span>
-        <p>No subjects are assigned to you for {{ semester }}, {{ school_year }}.</p>
-        {% if current_user.is_superadmin %}
-          <a class="button button-primary" href="{{ url_for('admin.subjects') }}">Add a subject</a>
-        {% else %}
-          <p class="tiny">The administrator assigns subjects to instructors.</p>
-        {% endif %}
-      </div>
+        <p class="tiny">The administrator assigns subjects to instructors.</p>
       {% endif %}
     </div>
-  </div>
+  </div></div>
+  {% endif %}
+</div>
 
+<div class="grid grid-2">
   <div class="card">
     <div class="card-head"><h2 class="grow">Quick actions</h2></div>
     <div class="card-body">

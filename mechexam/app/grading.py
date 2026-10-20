@@ -163,6 +163,12 @@ class StudentResult:
         return is_passing(self.grade)
 
     @property
+    def completion_grade(self) -> str:
+        """Only a finalised subject can carry one; otherwise the column is
+        left blank for the registrar to write in by hand."""
+        return (self.frozen.completion_grade or "") if self.frozen else ""
+
+    @property
     def final_display(self) -> str:
         if self.final_percent is None:
             return "—"

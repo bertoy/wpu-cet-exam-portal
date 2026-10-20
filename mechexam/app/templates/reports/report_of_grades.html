@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Report of Grades · {{ course.code }}{% endblock %}
+
+{#
+  WPU-OSF-OSAS-OAR-09 Rev.00 — the registrar's own form.
+
+  This reproduces the printed original rather than improving on it. The
+  heading rule, the two-column identification block, the six columns and the
+  signature block are placed where the registrar's copy places them, because a
+  form that is filed is only useful if it matches the one being filed against.
+  The portal's working grade sheet is a separate page and stays as it was.
+#}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+    Report of Grades
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>Report of Grades</h1>
+      <p class="page-sub">
+        The registrar's form, {{ report_of_grades_form }} — ready to print and
+        sign. One programme per sheet, so print it per section.
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
+        Working grade sheet
+      </a>
+    </div>
+  </div>
+
+  {% if sections %}
+  <div class="button-row">
+    <span class="small muted">Section:</span>
+    {% for s in sections %}
+    <a class="button button-small {{ 'button-gold' if section_id == s.id }}"
+       href="{{ url_for('reports.report_of_grades', course_id=course.id, section=s.id) }}">
+      {{ s.name }}{% if not s.program %} <span class="tiny">(no programme set)</span>{% endif %}
+    </a>
+    {% endfor %}
+    <a class="button button-small {{ 'button-gold' if not section_id }}"
+       href="{{ url_for('reports.report_of_grades', course_id=course.id) }}">All sections</a>
+  </div>
+  {% endif %}
+
+  {% if not programme %}
+  <div class="callout callout-warning">
+    <span class="glyph" aria-hidden="true">&#9888;</span>
+    <div class="grow">
+      <p class="mb0">
+        The Programme line is blank because this
+        {{ 'section has none set' if section else 'class covers more than one, or none is recorded' }}.
+        Set it on the section{% if not section %} and print one section at a
+        time{% endif %} — the registrar's form names a single programme per
+        sheet.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Details for the signature block</h2></div>
+    <div class="card-body">
+      <form method="get" class="field-row">
+        {% if section_id %}<input type="hidden" name="section" value="{{ section_id }}">{% endif %}
+        <div class="field">
+          <label for="signed_by">Name over the signature</label>
+          <input type="text" id="signed_by" name="signed_by" value="{{ signature_name }}">
+        </div>
+        <div class="field">
+          <label for="submitted">Date submitted</label>
+          <input type="text" id="submitted" name="submitted" value="{{ submitted_on }}">
+        </div>
+        <div class="field" style="flex:0 0 11rem">
+          <label for="rows">Rows on the first sheet</label>
+          <input type="number" id="rows" name="rows" min="10" max="40" value="{{ rows_per_page }}">
+          <p class="field-hint">
+            Each sheet carries the full heading. Lower this if long names wrap
+            and push rows past the bottom of the page.
+          </p>
+        </div>
+        <div class="field" style="flex:0 0 8rem">
+          <span class="label-like">&nbsp;</span>
+          <button type="submit" class="button">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% set pages = results|batch(rows_per_page)|list %}
+{% for page in pages %}
+{% set page_offset = loop.index0 * rows_per_page %}
+<div class="rog">
+  {# ----------------------------------------------------------- heading #}
+  <div class="rog-head">
+    <img class="rog-seal" src="{{ asset('img/wpu-seal.png') }}" alt="University seal">
+    <div class="rog-title">
+      <p class="rog-republic">Republic of the Philippines</p>
+      <p class="rog-university">{{ school_name }}</p>
+    </div>
+    <p class="rog-tagline">{{ university_tagline }}</p>
+  </div>
+  <div class="rog-rule"></div>
+
+  <p class="rog-office">{{ registrar_office }}</p>
+  <p class="rog-campus">{{ registrar_campus }}<br>Campus</p>
+
+  <p class="rog-form-title">REPORT OF GRADES</p>
+  <p class="rog-term">{{ term }}</p>
+
+  {# ---------------------------------------------- identification block #}
+  <table class="rog-ident">
+    <tr>
+      <td class="rog-label">Instructor/Profesor:</td>
+      <td class="rog-value {{ 'rog-long' if instructor and (instructor.name or '')|length > 24 }}">{{ instructor.name if instructor else '' }}</td>
+      <td class="rog-label rog-right">College:</td>
+      <td class="rog-value rog-wide">{{ college_name }}</td>
+    </tr>
+    <tr>
+      <td class="rog-label">Course Code:</td>
+      <td class="rog-value">{{ course.code }}</td>
+      <td class="rog-label rog-right">Course Title:</td>
+      <td class="rog-value rog-wide">{{ course.title }}</td>
+    </tr>
+    <tr>
+      <td class="rog-label">Section:</td>
+      <td class="rog-value">{{ section.name if section else '' }}</td>
+      <td class="rog-label rog-right">Program:</td>
+      <td class="rog-value rog-wide {{ 'rog-long' if programme|length > 34 }}">{{ programme }}</td>
+    </tr>
+  </table>
+
+  {# ------------------------------------------------------------- marks #}
+  <table class="rog-marks">
+    <thead>
+      <tr>
+        <th class="rog-n">#</th>
+        <th class="rog-sn">Student #</th>
+        <th class="rog-nameh">Name</th>
+        <th class="rog-final">Final Grade</th>
+        <th class="rog-completion">Completion Grade</th>
+        <th class="rog-remark">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for result in page %}
+      <tr>
+        <td class="rog-n">{{ page_offset + loop.index }}</td>
+        <td class="rog-sn">{{ result.student.student_number or '' }}</td>
+        <td class="rog-name">{{ result.student.name }}</td>
+        <td class="rog-final">{{ result.grade if result.grade != '—' else '' }}</td>
+        <td class="rog-completion">{{ result.completion_grade or '' }}</td>
+        <td class="rog-remark">{{ result.remark|upper if result.remark else '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# --------------------------------------------------------- signature #}
+  {% if loop.last %}
+  <table class="rog-sign">
+    <tr>
+      <td class="rog-sign-rule">{{ signature_name }}</td>
+    </tr>
+    <tr>
+      <td class="rog-sign-caption">Signature over Printed Name of Instructor/Professor</td>
+    </tr>
+    <tr>
+      <td class="rog-sign-date">
+        <span class="rog-sign-datelabel">Date Submited :</span>
+        <span class="rog-sign-dateline">{{ submitted_on }}</span>
+      </td>
+    </tr>
+  </table>
+  {% endif %}
+
+  <p class="rog-formcode">{{ report_of_grades_form }}</p>
+</div>
+{% endfor %}
+
+{% if not results %}
+<div class="callout callout-info no-print">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow"><p class="mb0">No students are enrolled in this selection.</p></div>
+</div>
+{% endif %}
+{% endblock %}
