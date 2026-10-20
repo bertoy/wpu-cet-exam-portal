@@ -1652,6 +1652,123 @@ def test_subject_colours():
 
 
 # --------------------------------------------------------------------------- #
+# 14f. The authoring assistant
+# --------------------------------------------------------------------------- #
+
+def test_assistant():
+    """It drafts; it never saves. And the key never comes back out."""
+    from app import ai
+    from app.blueprints.assistant import extract_csv
+    from app.models import AIConversation, AIMessage, QuestionBank
+
+    # ---- pulling the sheet out of a reply ------------------------------- #
+    fenced = (
+        "Here are five questions.\n\n```csv\n"
+        "type,question,points,answer,option_a,option_b\n"
+        "mcq,Which one?,2,A,alpha,beta\n```\nAnything else?"
+    )
+    check("a fenced CSV block is found",
+          extract_csv(fenced).startswith("type,question"), extract_csv(fenced)[:30])
+    check("the prose around it is discarded",
+          "Here are five" not in extract_csv(fenced))
+    check("a bare sheet with no fence is still read",
+          extract_csv("type,question,points\nmcq,Hi,1").startswith("type,"))
+    check("prose with no sheet yields nothing",
+          extract_csv("I would rather not write that paper.") == "")
+    check("a code block that is not a sheet is ignored",
+          extract_csv("```python\nprint('hello')\n```") == "")
+
+    # ---- the key is write-only and never rendered ----------------------- #
+    secret = "sk-ant-test-DO-NOT-ECHO-0123456789"
+    ai.store_key(secret)
+    check("a stored key can be read back by the app", ai.resolve_key() == secret)
+    check("the key is not stored in the clear",
+          secret not in (Setting.get(ai.SETTING_KEY, "") or ""),
+          "the raw key is sitting in the settings table")
+    check("the app knows where the key came from",
+          ai.key_source() == "database", ai.key_source())
+
+    Setting.put(ai.SETTING_ENABLED, "1")
+    db.session.commit()
+
+    admin = User.query.filter_by(username="admin").first()
+    if admin is not None:
+        admin.set_password("admin-for-test")
+        db.session.commit()
+        with signed_in("admin", "admin-for-test") as client:
+            body = client.get("/admin/assistant").get_data(as_text=True)
+            check("the saved key is never rendered into the page",
+                  secret not in body,
+                  "the key appears in the administration page")
+            check("the page says a key is set",
+                  "saved here" in body or "not set" not in body)
+
+    ai.store_key("")
+    db.session.commit()
+    check("clearing the key really clears it", ai.resolve_key() == "")
+    check("and the app reports no key", ai.key_source() == "none")
+
+    # ---- an instructor's draft cannot save anything --------------------- #
+    teacher = make_instructor("ai-teacher")
+    course = make_course("TEST-AI", teacher)
+    bank = QuestionBank(course_id=course.id, name="AI bank")
+    db.session.add(bank)
+    conversation = AIConversation(user_id=teacher.id, title="Draft")
+    db.session.add(conversation)
+    db.session.flush()
+    message = AIMessage(
+        conversation_id=conversation.id, role="assistant",
+        content=("```csv\n"
+                 "type,question,points,answer,option_a,option_b\n"
+                 "mcq,Which equation of state?,2,A,PV = mRT,PV = nRT\n"
+                 "numeric,Find P2,5,202.65,,\n```"),
+    )
+    db.session.add(message)
+    db.session.commit()
+
+    before = Question.query.filter_by(bank_id=bank.id).count()
+    with signed_in("ai-teacher", "pw-ai-teacher") as client:
+        response = client.post(f"/assistant/message/{message.id}/to-bank",
+                               data={"bank_id": str(bank.id)})
+        check("sending a draft to a bank is accepted",
+              response.status_code == 200, str(response.status_code))
+        check("but it writes nothing by itself",
+              Question.query.filter_by(bank_id=bank.id).count() == before,
+              str(Question.query.filter_by(bank_id=bank.id).count()))
+        check("it hands over to the ordinary importer instead",
+              f"/exams/banks/{bank.id}/import" in response.get_data(as_text=True))
+
+        # The importer's own review step still saves nothing.
+        sheet = ("type,question,points,answer,option_a,option_b\n"
+                 "mcq,Which equation of state?,2,A,PV = mRT,PV = nRT\n")
+        client.post(f"/exams/banks/{bank.id}/import", data={"csv_text": sheet})
+        check("and the review step after it still saves nothing",
+              Question.query.filter_by(bank_id=bank.id).count() == before)
+
+    # ---- conversations are private -------------------------------------- #
+    stranger = make_instructor("ai-stranger")
+    make_course("TEST-AI2", stranger)
+    with signed_in("ai-stranger", "pw-ai-stranger") as client:
+        response = client.get(f"/assistant/{conversation.id}")
+        check("an instructor cannot open someone else's conversation",
+              response.status_code == 404, str(response.status_code))
+        response = client.post(f"/assistant/message/{message.id}/to-bank",
+                               data={"bank_id": str(bank.id)})
+        check("nor send their draft into a bank",
+              response.status_code == 404, str(response.status_code))
+
+    # ---- with no key, nothing is attempted ------------------------------ #
+    Setting.put(ai.SETTING_ENABLED, "0")
+    db.session.commit()
+    with signed_in("ai-teacher", "pw-ai-teacher") as client:
+        client.post(f"/assistant/{conversation.id}/say",
+                    data={"message": "write me a paper"}, follow_redirects=True)
+    check("with the assistant off, no reply is recorded",
+          not any(m.role == "assistant" and "paper" in m.content
+                  for m in reload(conversation).messages))
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -1949,6 +2066,7 @@ def main():
         ("Adding one student", test_add_single_student),
         ("Lecture/laboratory split per subject", test_per_subject_shares),
         ("Subject colours and appearance", test_subject_colours),
+        ("The authoring assistant", test_assistant),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

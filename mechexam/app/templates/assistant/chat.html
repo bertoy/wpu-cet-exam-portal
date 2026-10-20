@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}{{ conversation.title }} · Assistant{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('assistant.index') }}">Assistant</a><span>/</span>
+  {{ conversation.title|truncate(48) }}
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>{{ conversation.title|truncate(70) }}</h1>
+    <p class="page-sub">
+      {% if conversation.course %}{{ conversation.course.code }} &middot; {% endif %}
+      {{ model }} &middot; every question is reviewed before it is saved
+    </p>
+  </div>
+  <div class="button-row">
+    <form method="post" action="{{ url_for('assistant.delete', conversation_id=conversation.id) }}"
+          data-confirm="Delete this conversation?">
+      <button type="submit" class="button button-small">Delete</button>
+    </form>
+  </div>
+</div>
+
+{% if not enabled %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      {% if not configured %}
+        No API key is set, so the assistant cannot answer.
+      {% else %}
+        The assistant is switched off.
+      {% endif %}
+      {% if current_user.is_superadmin %}
+        Set it up in <a href="{{ url_for('admin.assistant') }}">Administration ▸ Assistant</a>.
+      {% else %}
+        An administrator sets this up.
+      {% endif %}
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="chat">
+  {% if not conversation.messages %}
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Ask for what you need</h2></div>
+    <div class="card-body">
+      <p class="small">
+        Describe the paper the way you would describe it to a colleague: the
+        topic, how many items, what kind, how hard. The assistant replies with
+        a question sheet you can send to any of your banks — and you see every
+        question before a single one is saved.
+      </p>
+      <div class="starter-list">
+        {% for starter in starters %}
+        <button type="button" class="starter" data-fill-message>{{ starter }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% for message in conversation.messages %}
+  <div class="turn turn-{{ message.role }}" {% if loop.last %}id="latest"{% endif %}>
+    <div class="turn-who">
+      {% if message.role == 'user' %}{{ current_user.display_name|truncate(28) }}
+      {% elif message.role == 'assistant' %}Assistant
+      {% else %}Could not answer{% endif %}
+      <span class="tiny muted">{{ message.created_at|dt('%d %b, %I:%M %p') }}</span>
+    </div>
+    {% if message.role == 'assistant' %}
+      {% set sheet = extract_csv(message.content) %}
+      <div class="turn-body">{{ strip_csv(message.content) }}</div>
+      {% if sheet %}
+      {% set count = sheet_rows(sheet) %}
+      <p class="turn-sheet">
+        <span class="glyph" aria-hidden="true">&#9783;</span>
+        A question sheet of {{ count }} question{{ '' if count == 1 else 's' }}
+        — send it to a bank below and you will see every one of them.
+      </p>
+      {% endif %}
+    {% else %}
+      <div class="turn-body">{{ message.content }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% if drafts and banks %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Question sheets in this conversation</h2>
+    <span class="pill pill-info">{{ drafts|length }}</span>
+  </div>
+  <div class="card-body">
+    <p class="small">
+      Sending a sheet to a bank opens the same review screen as a spreadsheet
+      you upload yourself. Nothing is written until you have read it and
+      pressed Import, and any row that cannot be read is reported rather than
+      saved.
+    </p>
+    {% for draft in drafts %}
+    <form method="post" class="draft-row"
+          action="{{ url_for('assistant.to_bank', message_id=draft.message.id) }}">
+      <span class="grow small">
+        Sheet from {{ draft.message.created_at|dt('%d %b, %I:%M %p') }}
+        &middot; {{ draft.count }} question{{ '' if draft.count == 1 else 's' }}
+      </span>
+      <select name="bank_id" required aria-label="Question bank">
+        <option value="">Choose a bank…</option>
+        {% for bank in banks %}
+        <option value="{{ bank.id }}">{{ bank.course.code }} — {{ bank.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="button button-primary button-small">Review &amp; add</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% elif drafts %}
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      There is a question sheet in this conversation, but you have no question
+      banks yet. <a href="{{ url_for('exams.banks') }}">Make one</a> and it can
+      be sent there.
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('assistant.say', conversation_id=conversation.id) }}"
+      class="card ask-card">
+  <div class="card-body">
+    <div class="field mb0">
+      <label for="message">Your message</label>
+      <textarea id="message" name="message" rows="3" required
+                placeholder="Ten numerical problems on the first law, moderate difficulty…"
+                {{ 'disabled' if not enabled }}>{{ prompt }}</textarea>
+    </div>
+    <div class="flex-between mt1">
+      <p class="tiny muted mb0">
+        The assistant can be wrong. Check the engineering as you would a
+        colleague's draft — the review screen shows you every answer.
+      </p>
+      <button type="submit" class="button button-primary" {{ 'disabled' if not enabled }}>
+        Send
+      </button>
+    </div>
+  </div>
+</form>
+{% endblock %}

@@ -54,6 +54,7 @@ def _register_blueprints(app: Flask) -> None:
     from .blueprints import (
         admin,
         api,
+        assistant,
         auth,
         courses,
         dashboard,
@@ -78,6 +79,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(messages.bp, url_prefix="/messages")
     app.register_blueprint(student.bp, url_prefix="/my")
     app.register_blueprint(api.bp, url_prefix="/api")
+    app.register_blueprint(assistant.bp, url_prefix="/assistant")
 
 
 def _register_jinja(app: Flask) -> None:

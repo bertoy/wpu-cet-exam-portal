@@ -487,6 +487,7 @@ def routes_for(client, role_label):
             f"/exams/course/{course.id}/sections.json",
             f"/api/exam/{exam.id}/monitor.json",
             "/exams/banks", f"/exams/banks/{bank.id}",
+            "/assistant/",
             "/gradebook/", f"/gradebook/{course.id}",
             f"/gradebook/{course.id}?scope=laboratory",
             f"/gradebook/{course.id}?section={section.id}",
@@ -513,6 +514,7 @@ def routes_for(client, role_label):
             "/admin/users/new", f"/admin/users/{student.id}",
             f"/admin/users/{instructor.id}",
             "/admin/subjects", "/admin/system", "/admin/audit",
+            "/admin/assistant",
         ]
 
         student_routes = [

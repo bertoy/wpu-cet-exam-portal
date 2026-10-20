@@ -81,6 +81,10 @@
          href="{{ url_for('rubrics.index') }}">
         <span class="glyph" aria-hidden="true">&#9745;</span> Rubrics
       </a>
+      <a class="sidebar-link {{ 'active' if here.startswith('assistant.') }}"
+         href="{{ url_for('assistant.index') }}">
+        <span class="glyph" aria-hidden="true">&#10022;</span> Assistant
+      </a>
     </div>
 
     {% if nav_courses %}
@@ -125,6 +129,10 @@
       <a class="sidebar-link {{ 'active' if here == 'admin.subjects' }}"
          href="{{ url_for('admin.subjects') }}">
         <span class="glyph" aria-hidden="true">&#9776;</span> All subjects
+      </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.assistant' }}"
+         href="{{ url_for('admin.assistant') }}">
+        <span class="glyph" aria-hidden="true">&#10022;</span> Assistant
       </a>
       <a class="sidebar-link {{ 'active' if here == 'admin.system' }}"
          href="{{ url_for('admin.system') }}">

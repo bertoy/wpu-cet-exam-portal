@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Assistant · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Assistant
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Authoring assistant</h1>
+    <p class="page-sub">
+      One key for the whole portal. Every instructor can then ask for draft
+      questions, and all use is billed to this account.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">API key</h2>
+      {% if key_source == 'environment' %}
+        <span class="pill pill-pass">from the environment</span>
+      {% elif key_source == 'database' %}
+        <span class="pill pill-info">saved here</span>
+      {% else %}
+        <span class="pill pill-closed">not set</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if key_source == 'environment' %}
+      <div class="callout callout-info">
+        <span class="glyph" aria-hidden="true">&#8505;</span>
+        <div class="grow">
+          <p class="mb0">
+            <code>ANTHROPIC_API_KEY</code> is set in this host's environment,
+            which is the better place for it. That key is being used and
+            anything typed below is ignored until it is removed.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      <form method="post" autocomplete="off">
+        <div class="field">
+          <label for="api_key">
+            {{ 'Replace the saved key' if key_source == 'database' else 'Paste your API key' }}
+          </label>
+          <input type="password" id="api_key" name="api_key" class="mono"
+                 autocomplete="new-password" spellcheck="false"
+                 placeholder="{{ '••••••••  (leave blank to keep the saved key)' if key_source == 'database' else 'sk-ant-…' }}">
+          <p class="field-hint">
+            A key is never shown back on this page once saved, so it cannot be
+            read off the screen. Get one from the Claude Console under API
+            keys.
+          </p>
+        </div>
+
+        <div class="callout callout-warning">
+          <span class="glyph" aria-hidden="true">&#9888;</span>
+          <div class="grow">
+            <p class="mb0">
+              A key saved here is encrypted in the database with a key derived
+              from <code>SECRET_KEY</code>. That stops it being read out of a
+              stray backup, but anyone holding both the database file
+              <em>and</em> <code>SECRET_KEY</code> can recover it. Setting
+              <code>ANTHROPIC_API_KEY</code> in the host's environment instead
+              is better, and takes precedence over anything saved here. Note
+              also that changing <code>SECRET_KEY</code> makes a saved key
+              unreadable and it must be pasted in again.
+            </p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="model">Model</label>
+          {% if models %}
+          <select id="model" name="model">
+            {% for entry in models %}
+            <option value="{{ entry.id }}" {{ 'selected' if entry.id == model }}>
+              {{ entry.display_name or entry.id }} ({{ entry.id }})
+            </option>
+            {% endfor %}
+            {% if model not in models|map(attribute='id')|list %}
+            <option value="{{ model }}" selected>{{ model }} (not in the list)</option>
+            {% endif %}
+          </select>
+          <p class="field-hint">
+            This list came from the API just now, so it is what your key can
+            actually use rather than what was current when the portal was
+            written.
+          </p>
+          {% else %}
+          <input type="text" id="model" name="model" class="mono" value="{{ model }}">
+          <p class="field-hint">
+            {% if model_error %}
+              The list of models could not be fetched: {{ model_error }}
+            {% else %}
+              Save a key first and this becomes a list of the models your key
+              can use. The default is <code>{{ default_model }}</code>.
+            {% endif %}
+          </p>
+          {% endif %}
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="enabled" value="1" {{ 'checked' if enabled }}>
+          <span>Instructors may use the assistant
+            <span class="check-note">Turn this off to stop all use without
+              removing the key.</span></span>
+        </label>
+
+        <div class="button-row">
+          <button type="submit" class="button button-primary">Save</button>
+          {% if key_source == 'database' %}
+          <button type="submit" name="action" value="clear" class="button button-danger"
+                  formnovalidate>Remove the saved key</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">What it can and cannot do</h2></div>
+    <div class="card-body">
+      <p class="small">
+        The assistant writes question sheets. It has no power to save
+        anything: what it produces is handed to the same importer as a
+        spreadsheet uploaded by hand, and the instructor sees every question
+        on the review screen before a single one reaches a bank. A wrong or
+        malformed answer is reported row by row, exactly as a typo in a
+        spreadsheet would be.
+      </p>
+      <ul class="small">
+        <li>It cannot read the gradebook, student records or marks.</li>
+        <li>It cannot mark, change or release anything.</li>
+        <li>It cannot write to a bank or an exam without a person pressing Import.</li>
+        <li>Conversations are private to the instructor who held them.</li>
+      </ul>
+
+      <div class="callout callout-warning">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          <p class="mb0">
+            <strong>On a free PythonAnywhere account this will not work.</strong>
+            Outbound traffic from a free account is restricted to an allowlist
+            that does not include the API, so the assistant will report that it
+            cannot connect however correct the key is. On a paid account, set
+            <code>HTTPS_PROXY</code> to <code>http://proxy.server:3128</code>
+            and reload the web app. On Railway or any ordinary host, no proxy
+            is needed.
+          </p>
+        </div>
+      </div>
+
+      <p class="small mb0">
+        Questions sent to the API include what the instructor typed and the
+        subject's code and title. Student names and marks are never sent.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

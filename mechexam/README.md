@@ -186,9 +186,15 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   on screen is submitted.
 * **Answers are saved as they are typed.** A flat battery or a dropped
   connection costs a student nothing.
-* **Leaving the exam** can submit it at once, warn with a grace period, or
-  simply be recorded. A phone whose screen merely goes to sleep is recognised
-  as such and is never penalised — the distinction the old build got wrong.
+* **A locked phone does not end an exam.** A browser cannot tell a locked
+  screen from a student opening another app — both hide the page and both take
+  the focus away — so the exam does not guess. It measures how long the
+  student was gone and decides when they come back, never while they are away.
+  An absence shorter than the exam's allowance (90 seconds by default) is
+  recorded as an interruption and never penalised; longer ones are forgiven a
+  set number of times with a warning on screen; only after that does strict
+  mode submit, and it says why. An earlier build submitted on the browser's
+  `blur` event, which is exactly what locking a phone produces.
 * **Exam traffic is tunable.** Administration → Year & semester sets how
   often answers are saved (at most every N seconds — answers still land
   shortly after a student stops typing, so nobody can lose more than N
@@ -225,6 +231,32 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 * **Item analysis**: difficulty and discrimination per question, so you can
   see which items are not working and why.
 
+### The authoring assistant
+
+* **A dedicated tab** where you describe the paper you want — "ten numerical
+  problems on the first law, moderate, with tolerances" — and get a draft
+  back. It knows the seven question types, writes mathematics in the same
+  LaTeX the portal renders, and works out numerical answers rather than
+  leaving placeholders.
+* **It cannot save anything.** What it writes is a question sheet in exactly
+  the CSV format a person would upload, and it is handed to the same importer
+  and the same review screen. You see every question before one of them
+  reaches a bank, and a malformed row is reported rather than stored. The
+  assistant therefore has the authority of somebody typing into Excel, and no
+  more: it cannot read the gradebook, cannot mark, cannot release, and cannot
+  write to a bank without you pressing Import.
+* **One key for the portal**, set by an administrator in Administration ▸
+  Assistant, so every instructor can use it and the billing is in one place.
+  The key is never shown back on the page once saved. Better still, set
+  `ANTHROPIC_API_KEY` in the host's environment — it takes precedence and
+  never touches the database. The model is chosen from a list fetched from the
+  API itself, so it stays right as models change.
+* **It will not work on a free PythonAnywhere account.** Outbound traffic from
+  a free account is limited to an allowlist that does not include the API. On
+  a paid account set `HTTPS_PROXY=http://proxy.server:3128`; on Railway or an
+  ordinary host nothing is needed.
+* Student names and marks are never sent anywhere.
+
 ### Gradebook
 
 * The CET structure: Written Works 20%, Performance Task 40%, Major
@@ -232,6 +264,11 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   67% lecture plus 33% laboratory. Laboratory can be switched on per subject
   and every weight is editable.
 * Transmutation from 95.60 = 1.00 down to 60.00 = 3.00, below that 5.00.
+* **The lecture and laboratory split belongs to each subject**, not to the
+  portal, because no two subjects divide the same way. Set it on the subject
+  with the common splits as presets; the figures are read as a ratio, so 70
+  and 30 means the same as 7 and 3. Changing one subject re-computes that
+  subject and touches no other.
 * Two averaging methods — total points over total possible (the college
   sheet), or the average of each activity's own percentage — and a per-activity
   multiplier so one quiz can count twice.
@@ -247,6 +284,14 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   than a failure. Passing gives exactly 3.00; holding the examination moves
   everyone who already passed one grade higher (2.50 becomes 2.25). None of it
   takes effect until you finalise the subject, and finalising can be undone.
+* **The registrar's Report of Grades**, WPU-OSF-OSAS-OAR-09 Rev.00,
+  reproduced rather than paraphrased: the university seal and heading, the
+  Instructor / Course Code / Section and College / Course Title / Programme
+  blocks, the #, Student #, Name, Final Grade, Completion Grade and Remarks
+  columns, the signature block and the form number. One programme per sheet,
+  so it prints per section; sections carry their programme written out in
+  full. This is the sheet that is signed and filed — the working grade sheet
+  below is a separate page.
 * **Printable grade sheet** in A4 landscape with the university heading,
   signature blocks, remarks and a pass / removal / fail tally; also a class
   list, a per-student grade slip and an attendance record.
@@ -277,8 +322,14 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 
 ### Everything else
 
-* **Dashboard** with the Mechanical Engineering seal as the logo, the CET seal
-  as a watermark, and a live clock and date.
+* **Dashboard of subject tiles**: every subject you teach as a coloured card
+  showing its headcount, exam count and grade split, clickable straight
+  through to the subject. Each subject carries one of twelve colours you pick
+  from the tile itself; a subject you have not coloured derives a stable one
+  from its code, and tiles on screen are nudged apart so no two ever look
+  alike. You choose the background (plain, tinted, or the department seal as a
+  watermark), the tile size, and light or dark, and the choice is yours alone
+  — it does not change what anyone else sees.
 * **Announcements** to a class or a section, and private messages, with an
   unread badge.
 * **File submissions** that go into the instructor's Google Drive folder

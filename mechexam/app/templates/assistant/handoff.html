@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Send to {{ bank.name }} · Assistant{% endblock %}
+
+{#
+  A hand-off, not a save. The sheet the assistant wrote is posted straight
+  into the ordinary bank importer, which parses and reviews it exactly as it
+  would a spreadsheet typed by hand. This page exists only because that
+  importer expects a form post.
+#}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Checking the draft</h1>
+    <p class="page-sub">
+      Reading the assistant's sheet for <strong>{{ bank.name }}</strong>.
+      Nothing has been saved.
+    </p>
+  </div>
+</div>
+
+<form method="post" id="handoff"
+      action="{{ url_for('exams.bank_import', bank_id=bank.id) }}">
+  <input type="hidden" name="csv_text" value="{{ sheet }}">
+  <div class="card">
+    <div class="card-body">
+      <p>
+        The next screen lists every question that was read, and every row that
+        could not be, before anything is written to the bank.
+      </p>
+      <div class="button-row">
+        <button type="submit" class="button button-primary">Check the draft</button>
+        <a class="button button-quiet"
+           href="{{ url_for('assistant.chat', conversation_id=conversation.id) }}">
+          Back to the conversation
+        </a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+  /* Submitted straight away where scripting is available; the button above is
+     the fallback, so this never becomes a dead end. */
+  document.getElementById("handoff").submit();
+</script>
+{% endblock %}

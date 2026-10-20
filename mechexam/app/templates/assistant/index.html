@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Assistant · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="grow">
+    <h1>Assistant</h1>
+    <p class="page-sub">
+      Draft questions, whole papers and banks by describing what you want.
+      Everything it writes goes through the same review screen as a
+      spreadsheet you upload — nothing is saved until you have read it.
+    </p>
+  </div>
+</div>
+
+{% if not enabled %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      {% if not configured %}No API key is set.{% else %}The assistant is switched off.{% endif %}
+      {% if current_user.is_superadmin %}
+        Set it up in <a href="{{ url_for('admin.assistant') }}">Administration ▸ Assistant</a>.
+      {% else %}
+        An administrator sets this up.
+      {% endif %}
+    </p>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Start something</h2></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('assistant.new') }}">
+      <div class="field">
+        <label for="prompt">What do you need?</label>
+        <textarea id="prompt" name="prompt" rows="3"
+                  placeholder="Ten numerical problems on the first law of thermodynamics…"></textarea>
+      </div>
+      <button type="submit" class="button button-primary">Start</button>
+    </form>
+
+    <p class="label-like mt2">Or begin from one of these</p>
+    <div class="starter-list">
+      {% for starter in starters %}
+      <form method="post" action="{{ url_for('assistant.new') }}">
+        <input type="hidden" name="prompt" value="{{ starter }}">
+        <button type="submit" class="starter">{{ starter }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if conversations %}
+<div class="card">
+  <div class="card-head"><h2 class="grow">Your conversations</h2></div>
+  <div class="card-body flush">
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Conversation</th><th>Subject</th><th>Last used</th></tr></thead>
+        <tbody>
+          {% for conversation in conversations %}
+          <tr>
+            <td>
+              <a href="{{ url_for('assistant.chat', conversation_id=conversation.id) }}">
+                {{ conversation.title|truncate(62) }}
+              </a>
+            </td>
+            <td class="small">{{ conversation.course.code if conversation.course else '—' }}</td>
+            <td class="small nowrap">{{ conversation.updated_at|dt('%d %b, %I:%M %p') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

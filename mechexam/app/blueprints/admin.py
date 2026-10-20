@@ -582,6 +582,69 @@ def subject_delete(course_id: int):
 
 
 # --------------------------------------------------------------------------- #
+# The authoring assistant
+# --------------------------------------------------------------------------- #
+
+@bp.route("/assistant", methods=["GET", "POST"])
+@superadmin_required
+def assistant():
+    """Where the API key is set, and the one place it can be changed.
+
+    The key is write-only from here: it is never rendered back into the page,
+    so a saved key cannot be read off the screen or out of the page source.
+    """
+    from .. import ai
+
+    models: list = []
+    model_error = ""
+
+    if request.method == "POST":
+        action = request.form.get("action") or "save"
+
+        if action == "clear":
+            ai.store_key("")
+            Setting.put(ai.SETTING_ENABLED, "0")
+            log_action(current_user, "ai_key_cleared", "setting")
+            db.session.commit()
+            flash("The API key has been removed and the assistant switched off.",
+                  "success")
+            return redirect(url_for("admin.assistant"))
+
+        raw = (request.form.get("api_key") or "").strip()
+        if raw:
+            try:
+                ai.store_key(raw)
+                log_action(current_user, "ai_key_set", "setting")
+            except ai.AIError as error:
+                flash(str(error), "error")
+                return redirect(url_for("admin.assistant"))
+
+        model = (request.form.get("model") or "").strip()
+        if model:
+            Setting.put(ai.SETTING_MODEL, model)
+        Setting.put(ai.SETTING_ENABLED, "1" if request.form.get("enabled") else "0")
+        db.session.commit()
+        flash("Assistant settings saved.", "success")
+        return redirect(url_for("admin.assistant"))
+
+    if ai.is_configured():
+        try:
+            models = ai.list_models()
+        except ai.AIError as error:
+            model_error = str(error)
+
+    return render_template(
+        "admin/assistant.html",
+        key_source=ai.key_source(),
+        enabled=Setting.get_bool(ai.SETTING_ENABLED),
+        model=ai.current_model(),
+        models=models,
+        model_error=model_error,
+        default_model=ai.DEFAULT_MODEL,
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Diagnostics, backups, audit
 # --------------------------------------------------------------------------- #
 

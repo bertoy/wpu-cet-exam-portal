@@ -19,3 +19,9 @@ psycopg2-binary==2.9.10
 # the System check page says so plainly.
 google-api-python-client==2.184.0
 google-auth==2.41.1
+
+# Encrypts an API key saved through the administration page. Optional: without
+# it a key can still be supplied as the ANTHROPIC_API_KEY environment
+# variable, which is the better place for it anyway, and the administration
+# page says so rather than storing anything in the clear.
+cryptography==50.0.1

@@ -1132,6 +1132,45 @@ class AuditLog(db.Model):
     user = db.relationship("User", foreign_keys=[user_id])
 
 
+class AIConversation(db.Model):
+    """A thread with the authoring assistant, belonging to one instructor."""
+
+    __tablename__ = "ai_conversation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey("course.id"), index=True)
+    title = db.Column(db.String(120), default="New conversation")
+    created_at = db.Column(db.DateTime, default=utcnow)
+    updated_at = db.Column(db.DateTime, default=utcnow, index=True)
+
+    user = db.relationship("User", foreign_keys=[user_id])
+    course = db.relationship("Course", foreign_keys=[course_id])
+    messages = db.relationship(
+        "AIMessage", backref="conversation", cascade="all, delete-orphan",
+        order_by="AIMessage.id", lazy="selectin",
+    )
+
+
+class AIMessage(db.Model):
+    """One turn. ``role`` is user, assistant, or error.
+
+    An error is kept in the thread rather than only flashed, so that when an
+    instructor says the assistant stopped working, the conversation itself
+    says what went wrong and when.
+    """
+
+    __tablename__ = "ai_message"
+
+    id = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(
+        db.Integer, db.ForeignKey("ai_conversation.id"), nullable=False, index=True
+    )
+    role = db.Column(db.String(20), nullable=False, default="user")
+    content = db.Column(db.Text, default="")
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+
 def log_action(user, action: str, entity: str = "", entity_id=None, detail: str = "") -> None:
     from flask import has_request_context, request
 
