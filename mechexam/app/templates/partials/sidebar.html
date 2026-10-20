@@ -130,6 +130,10 @@
          href="{{ url_for('admin.subjects') }}">
         <span class="glyph" aria-hidden="true">&#9776;</span> All subjects
       </a>
+      <a class="sidebar-link {{ 'active' if here == 'admin.password_prompts' }}"
+         href="{{ url_for('admin.password_prompts') }}">
+        <span class="glyph" aria-hidden="true">&#128273;</span> Password prompts
+      </a>
       <a class="sidebar-link {{ 'active' if here == 'admin.assistant' }}"
          href="{{ url_for('admin.assistant') }}">
         <span class="glyph" aria-hidden="true">&#10022;</span> Assistant

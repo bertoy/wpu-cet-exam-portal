@@ -357,7 +357,11 @@ def _save_user(user: User | None):
     elif created:
         # Sensible default: the student number, or the username.
         user.set_password(student_number or username)
-        user.must_change_password = True
+        user.must_change_password = (
+            Setting.get_bool("new_students_must_change_password")
+            if user.role == ROLE_STUDENT
+            else True
+        )
 
     log_action(
         current_user,
@@ -579,6 +583,126 @@ def subject_delete(course_id: int):
     db.session.commit()
     flash(f"Deleted {label}.", "success")
     return redirect(url_for("admin.subjects"))
+
+
+# --------------------------------------------------------------------------- #
+# Who is asked to change their password
+# --------------------------------------------------------------------------- #
+
+@bp.route("/password-prompts", methods=["GET", "POST"])
+@superadmin_required
+def password_prompts():
+    """Clear the forced password change for students, in bulk.
+
+    A class imported from a list starts with the student number as the
+    password and a requirement to change it, which is right when the accounts
+    will outlive the term. It is wrong on the morning of an examination, when
+    sixty students meeting the portal for the first time each hit a password
+    form before they can start. This page lifts that, for whichever students
+    are ticked, in one action.
+
+    It is deliberately not reversible from here: re-imposing it on a class
+    would lock out students who have already chosen a password and are using
+    it. An individual account can still be set either way on its own page.
+    """
+    section_id = request.args.get("section", type=int)
+    course_id = request.args.get("course", type=int)
+    search = (request.args.get("q") or "").strip()
+    pending_only = request.args.get("pending", "1") != "0"
+
+    if request.method == "POST":
+        if request.form.get("action") == "setting":
+            Setting.put(
+                "new_students_must_change_password",
+                "1" if request.form.get("new_students_must_change_password") else "0",
+            )
+            db.session.commit()
+            flash("Saved. This applies to accounts created from now on.", "success")
+            return redirect(request.referrer or url_for("admin.password_prompts"))
+
+        ids = request.form.getlist("student_ids", type=int)
+        if not ids:
+            flash("No students were ticked, so nothing was changed.", "warning")
+            return redirect(request.referrer or url_for("admin.password_prompts"))
+
+        students = (
+            User.query.filter(User.id.in_(ids), User.role == ROLE_STUDENT).all()
+        )
+        cleared = 0
+        for student in students:
+            if student.must_change_password:
+                student.must_change_password = False
+                cleared += 1
+
+        log_action(
+            current_user, "password_prompts_cleared", "user", None,
+            f"{cleared} student(s)",
+        )
+        db.session.commit()
+
+        if cleared:
+            flash(
+                f"{cleared} student{'' if cleared == 1 else 's'} will no longer be "
+                f"asked to change their password at sign-in. Their existing "
+                f"passwords are unchanged.",
+                "success",
+            )
+        else:
+            flash("Those students were not being asked to change anyway.", "info")
+        return redirect(request.referrer or url_for("admin.password_prompts"))
+
+    query = User.query.filter(User.role == ROLE_STUDENT, User.is_enabled.is_(True))
+
+    if course_id:
+        student_ids = [
+            e.student_id
+            for e in Enrollment.query.filter_by(
+                course_id=course_id, is_dropped=False
+            ).all()
+            if not section_id or e.section_id == section_id
+        ]
+        query = query.filter(User.id.in_(student_ids or [-1]))
+
+    if search:
+        pattern = f"%{search.lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(User.name).like(pattern),
+                func.lower(User.student_number).like(pattern),
+            )
+        )
+
+    if pending_only:
+        query = query.filter(User.must_change_password.is_(True))
+
+    students = query.order_by(User.name).limit(500).all()
+
+    pending_total = User.query.filter(
+        User.role == ROLE_STUDENT,
+        User.is_enabled.is_(True),
+        User.must_change_password.is_(True),
+    ).count()
+
+    year, semester = Setting.term()
+    courses = (
+        Course.query.filter_by(school_year=year, semester=semester)
+        .order_by(Course.code)
+        .all()
+    )
+    chosen = next((c for c in courses if c.id == course_id), None)
+
+    return render_template(
+        "admin/password_prompts.html",
+        students=students,
+        pending_total=pending_total,
+        courses=courses,
+        course=chosen,
+        course_id=course_id,
+        section_id=section_id,
+        search=search,
+        pending_only=pending_only,
+        new_students_setting=Setting.get_bool("new_students_must_change_password"),
+    )
 
 
 # --------------------------------------------------------------------------- #

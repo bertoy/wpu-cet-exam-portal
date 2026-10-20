@@ -592,7 +592,12 @@ def _find_or_create_student(
         year_level=year_level,
     )
     student.set_password(password or number)
-    student.must_change_password = True
+    # The portal-wide choice decides. An administrator who has turned this off
+    # before an examination does not want it reimposed by the class list they
+    # import ten minutes later.
+    student.must_change_password = Setting.get_bool(
+        "new_students_must_change_password"
+    )
     db.session.add(student)
     db.session.flush()
     return student, True

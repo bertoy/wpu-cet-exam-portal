@@ -1769,6 +1769,84 @@ def test_assistant():
 
 
 # --------------------------------------------------------------------------- #
+# 14g. Lifting the forced password change
+# --------------------------------------------------------------------------- #
+
+def test_password_prompts():
+    """Clearing the prompt must not touch anyone's actual password."""
+    teacher = make_instructor("pw-teacher")
+    course = make_course("TEST-PW", teacher)
+
+    asked = make_student("2025-5001")
+    asked.must_change_password = True
+    settled = make_student("2025-5002")
+    settled.set_password("chosen-by-the-student")
+    settled.must_change_password = False
+    outsider = make_student("2025-5003")
+    outsider.must_change_password = True
+    for student in (asked, settled):
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+    db.session.commit()
+
+    admin = User.query.filter_by(username="admin").first()
+    admin.set_password("admin-for-test")
+    db.session.commit()
+
+    with signed_in("admin", "admin-for-test") as client:
+        # Nothing ticked changes nothing.
+        client.post("/admin/password-prompts", data={}, follow_redirects=True)
+        check("with nothing ticked, nobody is changed",
+              reload(asked).must_change_password)
+
+        client.post("/admin/password-prompts",
+                    data={"student_ids": [str(asked.id)]}, follow_redirects=True)
+        check("a ticked student is no longer asked",
+              not reload(asked).must_change_password)
+        check("a student who was not ticked is untouched",
+              reload(outsider).must_change_password)
+        check("the student's password still works",
+              reload(settled).check_password("chosen-by-the-student"))
+
+    # The student can now sign in without being sent to the password form.
+    with signed_in("2025-5001", "2025-5001") as client:
+        response = client.get("/", follow_redirects=False)
+        check("and signing in goes straight to the portal",
+              response.status_code == 200, str(response.status_code))
+
+    # ---- the standing setting governs new accounts ---------------------- #
+    Setting.put("new_students_must_change_password", "0")
+    db.session.commit()
+    with signed_in("pw-teacher", "pw-pw-teacher") as client:
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2025-5100", "name": "Nuevo, Ana",
+        }, follow_redirects=True)
+    fresh = User.query.filter_by(student_number="2025-5100").first()
+    check("with the setting off, a new student is not asked",
+          fresh is not None and not fresh.must_change_password)
+    check("and still has the student number as their password",
+          fresh is not None and fresh.check_password("2025-5100"))
+
+    Setting.put("new_students_must_change_password", "1")
+    db.session.commit()
+    with signed_in("pw-teacher", "pw-pw-teacher") as client:
+        client.post(f"/subjects/{course.id}/add-student", data={
+            "student_number": "2025-5101", "name": "Viejo, Ben",
+        }, follow_redirects=True)
+    fresh = User.query.filter_by(student_number="2025-5101").first()
+    check("with the setting on, a new student is asked again",
+          fresh is not None and fresh.must_change_password)
+
+    # ---- only an administrator may do this ------------------------------ #
+    with signed_in("pw-teacher", "pw-pw-teacher") as client:
+        response = client.post("/admin/password-prompts",
+                               data={"student_ids": [str(outsider.id)]})
+        check("an instructor cannot clear password prompts",
+              response.status_code in (302, 403, 404), str(response.status_code))
+        check("and the student is still asked",
+              reload(outsider).must_change_password)
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2067,6 +2145,7 @@ def main():
         ("Lecture/laboratory split per subject", test_per_subject_shares),
         ("Subject colours and appearance", test_subject_colours),
         ("The authoring assistant", test_assistant),
+        ("Lifting the password prompt", test_password_prompts),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

@@ -311,6 +311,16 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
 * Two lists: the term students roll, and the class list per section.
 * Students get their own password and may change it; instructors issue a reset
   code when someone forgets, so no email server is needed.
+* **The forced password change can be lifted in bulk.** A student created from
+  a class list starts with their student number as the password and is asked
+  to choose a new one at first sign-in — right for accounts that will outlive
+  the term, wrong on the morning of an examination when it puts a form between
+  sixty students and their paper. Administration ▸ Password prompts lists the
+  students, ticks everyone currently being asked, and lifts it for whoever you
+  leave ticked; filter by subject and section first. Nobody's password is
+  changed, only the prompt. There is also a standing setting for whether newly
+  created accounts are asked at all, so an import made ten minutes later does
+  not put it back.
 * Class lists can be imported by pasting them in, creating accounts as it goes.
 * **One student can be added straight from the subject page** — for the late
   enrolee who turns up in the second week. If the student number is already on

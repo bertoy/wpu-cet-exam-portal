@@ -173,6 +173,9 @@
         for (var b = 0; b < boxes.length; b++) {
           boxes[b].addEventListener("change", function () { updateCount(selector); });
         }
+        // Some pages arrive with boxes already ticked, so the count has to be
+        // right before anybody touches anything.
+        updateCount(selector);
       })(masters[i]);
     }
 

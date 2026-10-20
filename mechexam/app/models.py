@@ -68,6 +68,11 @@ class Setting(db.Model):
         "grades_released_default": "0",
         "exam_autosave_seconds": "20",
         "exam_clock_poll_seconds": "60",
+        # Whether a newly created student account is asked to choose a new
+        # password at first sign-in. Right for accounts that will outlive the
+        # term; wrong on the morning of an examination, when it puts a form
+        # between sixty students and their paper.
+        "new_students_must_change_password": "1",
     }
 
     # Bounds for the exam-timing settings. The upper limit on autosave is a
