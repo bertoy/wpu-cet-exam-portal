@@ -92,6 +92,165 @@ def course(course_id: int):
 
 
 # --------------------------------------------------------------------------- #
+# The class record, for printing
+# --------------------------------------------------------------------------- #
+
+def _paginate_columns(components, budget: int) -> list[list[dict]]:
+    """Pack the activity columns into sheets that fit across the paper.
+
+    A term's gradebook is wider than any sheet of paper: eight chapter
+    exercises, four quizzes and two examinations is already two dozen columns,
+    and shrinking them to fit makes the figures unreadable, which defeats the
+    point of printing them.
+
+    So the columns are split across sheets instead. A component is kept whole
+    wherever it fits, because reading half of Performance Task on one sheet and
+    half on another is worse than turning a page. A component too wide for a
+    sheet on its own is split, and its percentage follows the last part.
+    """
+    pages: list[list[dict]] = []
+    current: list[dict] = []
+    used = 0
+
+    for component in components:
+        items = list(component.items)
+        # One column per activity, plus one for the component's own percentage.
+        width = len(items) + 1
+
+        if width <= budget - used:
+            current.append({"component": component, "activities": items,
+                            "show_percent": True, "continued": False})
+            used += width
+            continue
+
+        if current and width <= budget:
+            pages.append(current)
+            current = [{"component": component, "activities": items,
+                        "show_percent": True, "continued": False}]
+            used = width
+            continue
+
+        # Wider than a whole sheet: split it, and keep the percentage with the
+        # last piece so it is never read as a partial total.
+        offset = 0
+        while offset < len(items):
+            room = budget - used
+            if room < 2:
+                pages.append(current)
+                current = []
+                used = 0
+                room = budget
+            chunk = items[offset:offset + max(1, room - 1)]
+            offset += len(chunk)
+            last = offset >= len(items)
+            current.append({
+                "component": component,
+                # Named "activities", not "items": in Jinja a dict's ``.items``
+                # resolves to the dict's own method and silently renders a
+                # bound method instead of the data. This file's own docstring
+                # records that costing real time once already.
+                "activities": chunk,
+                "show_percent": last,
+                "continued": not last or chunk is not items[:len(chunk)],
+            })
+            used += len(chunk) + (1 if last else 0)
+            if not last:
+                pages.append(current)
+                current = []
+                used = 0
+
+    if current:
+        pages.append(current)
+    return pages or [[]]
+
+
+@bp.route("/<int:course_id>/record")
+@staff_required
+def class_record(course_id: int):
+    """The whole class's marks on paper: students down, activities across.
+
+    This is the gradebook grid as a printable sheet. It is the working record
+    an instructor keeps in a folder and brings to a meeting, which is why it
+    shows every activity rather than only the totals the registrar wants.
+    """
+    course_row = require_course(course_id, manage=False)
+    section_id = request.args.get("section", type=int)
+    scope = request.args.get("scope", SCOPE_LECTURE)
+    if scope not in (SCOPE_LECTURE, SCOPE_LABORATORY):
+        scope = SCOPE_LECTURE
+
+    results = compute_class(course_row, section_id)
+    components = [c for c in course_row.components if c.scope == scope]
+    components.sort(key=lambda c: (c.order_index or 0, c.id))
+
+    # Chosen so a sheet stays readable rather than to fit the most in.
+    columns_per_sheet = max(6, min(request.args.get("cols", type=int) or 16, 30))
+
+    column_pages = _paginate_columns(components, columns_per_sheet)
+
+    # Each student's marks keyed by activity, so a sheet showing an arbitrary
+    # slice of the columns can look up the right cell without the template
+    # walking the component list for every cell it draws.
+    lines = []
+    for result in results:
+        scope_result = (
+            result.laboratory if scope == SCOPE_LABORATORY else result.lecture
+        )
+        marks = {}
+        percents = {}
+        if scope_result:
+            for component_result in scope_result.components:
+                percents[component_result.component.id] = component_result.raw_percent
+                for entry in component_result.entries:
+                    marks[entry.item.id] = entry
+        lines.append({
+            "result": result,
+            "scope_result": scope_result,
+            "marks": marks,
+            "percents": percents,
+        })
+
+
+
+    # The percentage a component is worth within this scope, keyed by id, so
+    # the template does not have to reach back through the component list.
+    section = next((s for s in course_row.sections if s.id == section_id), None)
+
+    # The rows are not split here. The column headings are a table header
+    # group, so the browser repeats them when a long class list runs over, and
+    # letting it decide where to break beats guessing a row count that is
+    # wrong as soon as a name wraps onto two lines.
+    sheets = [
+        {
+            "rows": lines,
+            "groups": groups,
+            "part": (
+                f"part {index + 1} of {len(column_pages)}"
+                if len(column_pages) > 1 else ""
+            ),
+            # The standing columns repeat on every part so that any one sheet
+            # can be read on its own.
+            "show_summary": True,
+        }
+        for index, groups in enumerate(column_pages)
+    ]
+
+    return render_template(
+        "gradebook/class_record.html",
+        course=course_row,
+        scope=scope,
+        results=results,
+        sheets=sheets,
+        section=section,
+        sections=list(course_row.sections),
+        section_id=section_id,
+        tally=class_tally(results),
+        columns_per_sheet=columns_per_sheet,
+        printed_on=datetime.now(),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Activities
 # --------------------------------------------------------------------------- #
 

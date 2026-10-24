@@ -2015,6 +2015,120 @@ def test_printable_records():
 
 
 # --------------------------------------------------------------------------- #
+# 14i. The class record on paper
+# --------------------------------------------------------------------------- #
+
+def test_class_record():
+    """The gradebook grid printed: columns split, nothing lost."""
+    from app.blueprints.gradebook import _paginate_columns
+
+    class FakeComponent:
+        def __init__(self, name, count):
+            self.name = name
+            self.items = list(range(count))
+
+    def total_activities(pages):
+        return sum(len(g["activities"]) for page in pages for g in page)
+
+    # A gradebook that fits on one sheet stays on one sheet.
+    pages = _paginate_columns([FakeComponent("A", 3), FakeComponent("B", 4)], 16)
+    check("a narrow gradebook prints on one sheet", len(pages) == 1,
+          str(len(pages)))
+
+    # A wide one is split, and every activity still appears exactly once.
+    components = [FakeComponent("A", 4), FakeComponent("B", 8), FakeComponent("C", 2)]
+    pages = _paginate_columns(components, 10)
+    check("a wide gradebook is split across sheets", len(pages) > 1, str(len(pages)))
+    check("every activity appears, and only once",
+          total_activities(pages) == 14, str(total_activities(pages)))
+
+    # A component is kept whole where it can be.
+    whole = [len(g["activities"]) for page in pages for g in page
+             if g["component"].name == "B"]
+    check("a component that fits a sheet is not split",
+          len(whole) == 1 and whole[0] == 8, str(whole))
+
+    # A component wider than a whole sheet must still be split, with its
+    # percentage following the last piece so it is never a partial total.
+    pages = _paginate_columns([FakeComponent("Huge", 25)], 8)
+    pieces = [g for page in pages for g in page]
+    check("a component wider than a sheet is split", len(pieces) > 1,
+          str(len(pieces)))
+    check("and nothing is dropped when it is",
+          total_activities(pages) == 25, str(total_activities(pages)))
+    check("only the last piece carries the percentage",
+          sum(1 for g in pieces if g["show_percent"]) == 1,
+          str([g["show_percent"] for g in pieces]))
+    check("the percentage is on the final piece",
+          pieces[-1]["show_percent"] is True)
+
+    # No sheet may exceed the budget it was given.
+    for page in pages:
+        width = sum(len(g["activities"]) + (1 if g["show_percent"] else 0)
+                    for g in page)
+        check("no sheet is wider than the column budget", width <= 8, str(width))
+
+    # An empty gradebook still yields a printable sheet rather than nothing.
+    check("an empty gradebook still prints a sheet",
+          _paginate_columns([], 16) == [[]])
+
+    # ---- through the web, against real marks ---------------------------- #
+    teacher = make_instructor("grid-teacher")
+    course = make_course("TEST-GRID", teacher, laboratory=True)
+    students = [make_student(f"2026-91{n:02d}") for n in range(3)]
+    for student in students:
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+
+    quiz = add_item(course, SCOPE_LECTURE, "Written Works", "GAS CYCLE", 20.0)
+    chapter = add_item(course, SCOPE_LECTURE, "Performance Task", "CHAPTER 1-VP", 40.0)
+    midterm = add_item(course, SCOPE_LECTURE, "Major Examinations",
+                       "MIDTERM EXAMINATION", 80.0, kind="midterm")
+    lab = add_item(course, SCOPE_LABORATORY, "Performance Task",
+                   "Laboratory Exercise 1", 50.0)
+    set_score(quiz, students[0], 20.0)
+    set_score(chapter, students[0], 31.0)
+    set_score(midterm, students[0], 73.0)
+    set_score(lab, students[0], 45.0)
+    set_score(quiz, students[1], 3.0)          # the rest left blank on purpose
+    db.session.commit()
+
+    with signed_in("grid-teacher", "pw-grid-teacher") as client:
+        response = client.get(f"/gradebook/{course.id}/record")
+        check("the class record prints", response.status_code == 200,
+              str(response.status_code))
+        body = response.get_data(as_text=True)
+        check("it names every activity",
+              "GAS CYCLE" in body and "CHAPTER 1-VP" in body
+              and "MIDTERM EXAMINATION" in body)
+        check("it lists every student",
+              all(s.student_number in body for s in students))
+        check("it shows a mark that was entered", ">20<" in body or "20" in body)
+        check("it says an empty cell is not a zero",
+              "not counted as a zero" in body)
+
+        lab_sheet = client.get(
+            f"/gradebook/{course.id}/record?scope=laboratory"
+        ).get_data(as_text=True)
+        check("the laboratory sheet prints its own activities",
+              "Laboratory Exercise 1" in lab_sheet)
+        check("and does not carry the lecture activities",
+              "GAS CYCLE" not in lab_sheet)
+
+        narrow = client.get(
+            f"/gradebook/{course.id}/record?cols=6"
+        ).get_data(as_text=True)
+        check("a tighter column budget still names every activity",
+              "GAS CYCLE" in narrow and "MIDTERM EXAMINATION" in narrow)
+
+    stranger = make_instructor("grid-stranger")
+    theirs = make_course("TEST-GRID2", stranger)
+    with signed_in("grid-teacher", "pw-grid-teacher") as client:
+        check("an instructor cannot print someone else's class record",
+              client.get(f"/gradebook/{theirs.id}/record").status_code
+              in (403, 404))
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2315,6 +2429,7 @@ def main():
         ("The authoring assistant", test_assistant),
         ("Lifting the password prompt", test_password_prompts),
         ("Printable records", test_printable_records),
+        ("The class record on paper", test_class_record),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

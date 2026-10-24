@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Class record · {{ course.code }}{% endblock %}
+
+{#
+  The gradebook grid on paper: students down, activities across.
+
+  A term's gradebook is wider than any sheet, so the columns are split across
+  sheets rather than shrunk to illegibility, and a long class list is split
+  down the rows as well. The standing columns repeat on every sheet so that
+  any one sheet can be read on its own.
+#}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('gradebook.course', course_id=course.id) }}">Gradebook</a><span>/</span>
+    {{ course.code }}<span>/</span>Class record
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>{{ scope|title }} marks — class record</h1>
+      <p class="page-sub">
+        {{ course.code }} &middot; {{ results|length }} student{{ '' if results|length == 1 else 's' }}
+        &middot; A4 landscape
+        {%- if sheets|length > 1 %}, {{ sheets|length }} parts across the columns{% endif %}
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('gradebook.course', course_id=course.id, scope=scope, section=section_id) }}">
+        Back to the gradebook
+      </a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">What to print</h2></div>
+    <div class="card-body">
+      <form method="get" class="field-row">
+        <div class="field">
+          <label for="scope">Which marks</label>
+          <select id="scope" name="scope" onchange="this.form.submit()">
+            <option value="lecture" {{ 'selected' if scope == 'lecture' }}>Lecture</option>
+            {% if course.has_laboratory %}
+            <option value="laboratory" {{ 'selected' if scope == 'laboratory' }}>Laboratory</option>
+            {% endif %}
+          </select>
+        </div>
+        {% if sections %}
+        <div class="field">
+          <label for="section">Section</label>
+          <select id="section" name="section" onchange="this.form.submit()">
+            <option value="">All sections</option>
+            {% for s in sections %}
+            <option value="{{ s.id }}" {{ 'selected' if section_id == s.id }}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <div class="field" style="flex:0 0 12rem">
+          <label for="cols">Activity columns per sheet</label>
+          <input type="number" id="cols" name="cols" min="6" max="30" value="{{ columns_per_sheet }}">
+          <p class="field-hint">
+            Lower this if the figures come out too small to read; the columns
+            spill onto another sheet rather than shrinking.
+          </p>
+        </div>
+        <div class="field" style="flex:0 0 7rem">
+          <span class="label-like">&nbsp;</span>
+          <button type="submit" class="button">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if not results %}
+  <div class="callout callout-info">
+    <span class="glyph" aria-hidden="true">&#8505;</span>
+    <div class="grow"><p class="mb0">No students in this selection.</p></div>
+  </div>
+  {% endif %}
+</div>
+
+{% for sheet in sheets %}
+<div class="classrec">
+  <div class="classrec-head">
+    <img class="classrec-seal" src="{{ asset('img/wpu-seal.png') }}" alt="University seal">
+    <div class="classrec-title">
+      <p class="classrec-university">{{ school_name }}</p>
+      <p class="classrec-college">{{ college_name }} &middot; {{ department_name }}</p>
+      <p class="classrec-form">{{ scope|title }} Marks — Class Record</p>
+    </div>
+    <div class="classrec-id">
+      <p><strong>{{ course.code }}</strong> — {{ course.title }}</p>
+      <p>{{ section.name if section else 'All sections' }} &middot; {{ course.term_label }}</p>
+      <p class="classrec-part">
+        {{ results|length }} student{{ '' if results|length == 1 else 's' }}
+        {%- if sheet.part %} &middot; {{ sheet.part }}{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <table class="classrec-grid">
+    <thead>
+      <tr>
+        <th class="classrec-n" rowspan="2">#</th>
+        <th class="classrec-name" rowspan="2">Student</th>
+        {% for group in sheet.groups %}
+          <th class="mid classrec-group"
+              colspan="{{ group.activities|length + (1 if group.show_percent else 0) }}">
+            {{ group.component.name }}
+            {% if group.continued %}<span class="classrec-cont">(continued)</span>{% endif %}
+            <span class="classrec-weight">{{ group.component.weight_percent|num }}%</span>
+          </th>
+        {% endfor %}
+        {% if sheet.show_summary %}
+          <th class="num classrec-sum" rowspan="2">{{ scope|title }}<br>%</th>
+          <th class="num classrec-sum" rowspan="2">Final<br>%</th>
+          <th class="mid classrec-sum" rowspan="2">Grade</th>
+          <th class="mid classrec-sum" rowspan="2">Remark</th>
+        {% endif %}
+      </tr>
+      <tr>
+        {% for group in sheet.groups %}
+          {% for item in group.activities %}
+          <th class="num classrec-item" title="{{ item.title }}">
+            <span class="classrec-item-title">{{ item.title|truncate(26) }}</span>
+            <span class="classrec-out">/{{ item.max_points|num }}</span>
+          </th>
+          {% endfor %}
+          {% if not group.activities %}
+            <th class="classrec-item classrec-none">none yet</th>
+          {% endif %}
+          {% if group.show_percent %}
+            <th class="num classrec-pct">%</th>
+          {% endif %}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in sheet.rows %}
+      {% set result = line.result %}
+      <tr>
+        <td class="classrec-n">{{ loop.index }}</td>
+        <td class="classrec-name">
+          {{ result.student.name }}
+          <span class="classrec-sn">{{ result.student.student_number or '' }}</span>
+        </td>
+
+        {% for group in sheet.groups %}
+          {% for item in group.activities %}
+            {% set entry = line.marks.get(item.id) %}
+            <td class="num">
+              {%- if entry and entry.points is not none -%}
+                {{ entry.points|num }}{% if entry.is_override %}*{% endif %}
+              {%- else -%}<span class="classrec-blank">—</span>{%- endif -%}
+            </td>
+          {% endfor %}
+          {% if not group.activities %}<td class="mid classrec-blank">—</td>{% endif %}
+          {% if group.show_percent %}
+            {% set pct = line.percents.get(group.component.id) %}
+            <td class="num classrec-pct">
+              {%- if pct is not none %}{{ pct|pct }}{% else %}—{% endif -%}
+            </td>
+          {% endif %}
+        {% endfor %}
+
+        {% if sheet.show_summary %}
+          <td class="num classrec-sum">
+            {%- if line.scope_result and line.scope_result.percent is not none -%}
+              {{ line.scope_result.percent|pct }}
+            {%- else -%}—{%- endif -%}
+          </td>
+          <td class="num classrec-sum">{{ result.final_display }}</td>
+          <td class="mid classrec-sum"><strong>{{ result.effective_grade }}</strong></td>
+          <td class="mid classrec-sum classrec-remark">{{ result.effective_remark }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="classrec-foot">
+    <div class="classrec-legend">
+      An empty cell means nothing was recorded; it is not counted as a zero.
+      An asterisk marks a figure entered by hand.
+      {% if course.has_laboratory %}
+        This subject is {{ course.lecture_share|num }}% lecture and
+        {{ course.laboratory_share|num }}% laboratory.
+      {% endif %}
+    </div>
+    <div class="classrec-tally">
+      Passed {{ tally.passed }} &middot; Removal {{ tally.removal }} &middot;
+      Failed {{ tally.failed }} &middot; Incomplete {{ tally.incomplete }}
+    </div>
+  </div>
+
+  <table class="classrec-sign">
+    <tr>
+      <td class="classrec-sign-rule">{{ course.owner.display_name if course.owner else '' }}</td>
+      <td class="classrec-sign-rule">&nbsp;</td>
+      <td class="classrec-sign-rule">&nbsp;</td>
+    </tr>
+    <tr>
+      <td class="classrec-sign-caption">Instructor</td>
+      <td class="classrec-sign-caption">Department Chair</td>
+      <td class="classrec-sign-caption">Dean</td>
+    </tr>
+  </table>
+
+  <p class="classrec-printed">
+    {{ course.code }} &middot; {{ scope|title }} marks &middot;
+    printed {{ printed_on.strftime('%d %B %Y at %I:%M %p') }}
+    {%- if not course.is_finalised %} &middot; <strong>provisional</strong>{% endif %}
+  </p>
+</div>
+{% endfor %}
+{% endblock %}

@@ -299,6 +299,16 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   so it prints per section; sections carry their programme written out in
   full. This is the sheet that is signed and filed — the working grade sheet
   below is a separate page.
+* **The gradebook grid on paper** — the whole class, students down and every
+  activity across, with each component's weight, the component percentages,
+  the scope standing, the final percentage, the grade and the remark. A term's
+  gradebook is wider than any sheet, so the columns are split across sheets
+  rather than shrunk until the figures cannot be read: a component is kept
+  whole wherever it fits, the standing columns repeat on every part so any one
+  sheet can be read alone, and you can set how many activity columns go on a
+  sheet. Long class lists flow onto further sheets with the headings repeated.
+  Lecture and laboratory print separately, with signature blocks for the
+  instructor, the chair and the dean.
 * **A full record of marks per student**, showing every activity behind the
   grade: written works, performance tasks and major examinations, lecture and
   laboratory separately with each component's weight, every mark with its date

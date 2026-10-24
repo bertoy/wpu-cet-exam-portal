@@ -1012,6 +1012,38 @@ details.panel .panel-body { padding: 0 1rem 1rem; }
   .record-scope-total td, .record-final-row td { border-top: 0.7pt solid #000; }
   .record-foot { color: #000; border-top: 0.4pt solid #000; font-size: 7.5pt; }
   .record-scope { page-break-after: avoid; break-after: avoid; }
+
+  /* No named page here. The default @page above is already A4 landscape,
+     and giving this one a name of its own made Chrome open the document with
+     a blank sheet -- it starts a new page whenever the named page differs
+     from the one in force, even when the two are identical. */
+  .classrec {
+    margin: 0; padding: 0; border: 0;
+    overflow: visible; font-size: 7.5pt;
+  }
+  .classrec + .classrec { page-break-before: always; }
+  .classrec-seal { width: 13mm; height: 13mm; }
+  .classrec-university { font-size: 10pt; }
+  .classrec-college { font-size: 7pt; }
+  .classrec-form { font-size: 8.5pt; }
+  .classrec-id { font-size: 7pt; }
+  .classrec-grid { font-size: 7pt; }
+  .classrec-grid th, .classrec-grid td { border: 0.3pt solid #777; padding: 0.5mm 1mm; }
+  .classrec-grid thead th, .classrec-pct, .classrec-sum {
+    background: #ececec !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .classrec-grid tbody tr:nth-child(even) td { background: #f7f7f7 !important; }
+  .classrec-item { font-size: 6pt; }
+  .classrec-sn { font-size: 6pt; }
+  .classrec-weight, .classrec-out { font-size: 6pt; }
+  .classrec-remark { font-size: 6pt; }
+  .classrec-foot { font-size: 6.5pt; color: #000; }
+  .classrec-sign-caption { font-size: 6.5pt; }
+  .classrec-printed { font-size: 6pt; color: #000; }
+  .classrec-head { border-bottom: 0.8pt solid #000; }
+  /* The column headings repeat when a sheet's rows run over. */
+  .classrec-grid thead { display: table-header-group; }
   a { color: #000; text-decoration: none; }
   a[href]::after { content: ""; }
 }
@@ -1623,4 +1655,85 @@ details.tile-paint { position: relative; }
 .record-foot {
   margin-top: 1rem; padding-top: 0.35rem; border-top: 1px solid #ccc;
   font-size: 0.72rem; color: #555; text-align: center;
+}
+
+/* ---------- the class record: the gradebook grid on paper --------------- */
+/*
+   A4 landscape, and wider than one sheet whatever the font size, so the route
+   splits the columns across sheets rather than shrinking them. Rotated column
+   headings would fit more in but are miserable to read at a desk, so activity
+   names stay horizontal and the columns are narrow instead.
+*/
+
+.classrec {
+  background: #fff; color: #000; width: 100%;
+  margin: 0 auto 1.5rem; padding: 1.25rem 1.5rem; box-sizing: border-box;
+  overflow-x: auto;
+}
+
+.classrec-head {
+  display: flex; align-items: flex-start; gap: 0.8rem;
+  padding-bottom: 0.4rem; border-bottom: 1.2px solid #000; margin-bottom: 0.6rem;
+}
+.classrec-seal { width: 2.6rem; height: 2.6rem; flex: 0 0 auto; }
+.classrec-title { flex: 1 1 auto; }
+.classrec-university { margin: 0; font-size: 0.95rem; font-weight: 700; }
+.classrec-college { margin: 0; font-size: 0.74rem; }
+.classrec-form {
+  margin: 0.15rem 0 0; font-size: 0.82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.classrec-id { flex: 0 0 auto; text-align: right; font-size: 0.74rem; }
+.classrec-id p { margin: 0; }
+.classrec-part { font-style: italic; color: #555; }
+
+.classrec-grid {
+  width: 100%; border-collapse: collapse; font-size: 0.7rem;
+  table-layout: auto;
+}
+.classrec-grid th, .classrec-grid td {
+  border: 0.5px solid #999; padding: 0.1rem 0.2rem; text-align: center;
+  vertical-align: middle;
+}
+.classrec-grid thead th { background: var(--line-soft); font-weight: 700; }
+.classrec-grid .num { text-align: right; }
+.classrec-grid .mid { text-align: center; }
+
+.classrec-n { width: 1.7rem; color: #555; }
+.classrec-name {
+  text-align: left !important; width: 11rem; line-height: 1.15;
+}
+.classrec-sn { display: block; font-size: 0.62rem; color: #555; }
+.classrec-group { font-size: 0.68rem; }
+.classrec-weight { display: block; font-weight: 400; font-size: 0.62rem; }
+.classrec-cont { font-weight: 400; font-style: italic; }
+.classrec-item { font-size: 0.6rem; font-weight: 600; line-height: 1.1; }
+.classrec-item-title { display: block; }
+.classrec-out { display: block; font-weight: 400; color: #555; }
+.classrec-none { font-weight: 400; font-style: italic; color: #666; }
+.classrec-pct { background: var(--line-soft); font-weight: 700; }
+.classrec-sum { background: var(--line-soft); }
+.classrec-remark { font-size: 0.62rem; }
+.classrec-blank { color: #999; }
+.classrec-grid tbody tr:nth-child(even) td { background: #fafafa; }
+.classrec-grid tbody tr { page-break-inside: avoid; break-inside: avoid; }
+
+.classrec-foot {
+  display: flex; gap: 1rem; justify-content: space-between;
+  margin-top: 0.5rem; font-size: 0.66rem; color: #444;
+}
+.classrec-tally { font-weight: 700; white-space: nowrap; }
+
+.classrec-sign {
+  width: 100%; margin-top: 1.4rem; border-collapse: collapse;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.classrec-sign td { border: 0; padding: 0 1.2rem; width: 33.33%; }
+.classrec-sign-rule { border-bottom: 0.8px solid #000; text-align: center; }
+.classrec-sign-caption {
+  text-align: center; font-size: 0.68rem; padding-top: 0.15rem !important;
+}
+
+.classrec-printed {
+  margin-top: 0.7rem; font-size: 0.64rem; color: #555; text-align: center;
 }

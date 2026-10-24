@@ -112,6 +112,10 @@
 <div class="card">
   <div class="card-head">
     <h2 class="grow">{{ scope|title }} marks</h2>
+    <a class="button button-small"
+       href="{{ url_for('gradebook.class_record', course_id=course.id, scope=scope, section=section_id) }}">
+      Print this sheet
+    </a>
     <span class="small muted">
       An empty cell means nothing recorded — it is not counted as a zero.
     </span>
