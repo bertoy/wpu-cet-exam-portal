@@ -23,6 +23,9 @@
     {% if attempt.manual_pending %}
       <span class="pill pill-removal">{{ attempt.manual_pending }} to mark</span>
     {% endif %}
+    <a class="button" href="{{ url_for('exams.attempt_report', attempt_id=attempt.id) }}">
+      Printable paper
+    </a>
   </div>
 </div>
 

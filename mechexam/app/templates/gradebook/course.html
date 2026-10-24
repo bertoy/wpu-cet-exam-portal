@@ -29,6 +29,9 @@
     <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
       Grade sheet
     </a>
+    <a class="button" href="{{ url_for('reports.mark_record', course_id=course.id, section=section_id) }}">
+      Mark records
+    </a>
     <a class="button" href="{{ url_for('gradebook.export_csv', course_id=course.id, section=section_id) }}">
       Export CSV
     </a>

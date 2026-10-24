@@ -18,6 +18,9 @@
     </p>
   </div>
   <div class="button-row">
+    <a class="button button-gold" href="{{ url_for('exams.exam_reports', exam_id=exam.id) }}">
+      Print marked papers
+    </a>
     <a class="button" href="{{ url_for('exams.analysis', exam_id=exam.id) }}">Item analysis</a>
     <a class="button" href="{{ url_for('exams.export_csv', exam_id=exam.id) }}">Export CSV</a>
     <form class="inline-form" method="post" action="{{ url_for('exams.rescore', exam_id=exam.id) }}"

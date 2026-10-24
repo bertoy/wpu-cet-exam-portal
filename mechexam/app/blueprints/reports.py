@@ -14,9 +14,11 @@ from flask import Blueprint, render_template, request
 
 from ..grading import class_tally, compute_class, compute_student, removal_item
 from ..models import (
+    AttendanceRecord,
     AttendanceSession,
     Enrollment,
     Exam,
+    RubricScore,
     Score,
     User,
 )
@@ -148,6 +150,102 @@ def slip(course_id: int, student_id: int):
         student=student,
         result=result,
         enrolment=enrolment,
+        printed_on=datetime.now(),
+    )
+
+
+def _mark_record(course, student, result):
+    """Everything behind one student's grade, gathered for printing.
+
+    The grade slip summarises; this is the full account. For each activity it
+    carries the mark, and where that mark came from a rubric, the rubric's own
+    criteria and what was given for each. An instructor asked where a 7 came
+    from should be able to point at a sheet of paper.
+    """
+    rubric_scores = {
+        score.item_id: score
+        for score in RubricScore.query.filter_by(student_id=student.id).all()
+        if score.item_id
+    }
+
+    sessions = (
+        AttendanceSession.query.filter_by(course_id=course.id)
+        .order_by(AttendanceSession.meeting_date)
+        .all()
+    )
+    records = {
+        record.session_id: record
+        for record in AttendanceRecord.query.filter(
+            AttendanceRecord.student_id == student.id,
+            AttendanceRecord.session_id.in_([s.id for s in sessions] or [-1]),
+        ).all()
+    }
+    attendance = {
+        "sessions": len(sessions),
+        "present": sum(
+            1 for s in sessions
+            if records.get(s.id) and records[s.id].status == "present"
+        ),
+        "absent": sum(
+            1 for s in sessions
+            if records.get(s.id) and records[s.id].status == "absent"
+        ),
+        "late": sum(
+            1 for s in sessions
+            if records.get(s.id) and records[s.id].status == "late"
+        ),
+        "excused": sum(
+            1 for s in sessions
+            if records.get(s.id) and records[s.id].status == "excused"
+        ),
+    }
+
+    return {
+        "student": student,
+        "result": result,
+        "rubric_scores": rubric_scores,
+        "attendance": attendance,
+        "enrolment": Enrollment.query.filter_by(
+            course_id=course.id, student_id=student.id
+        ).first(),
+    }
+
+
+@bp.route("/<int:course_id>/mark-record")
+@bp.route("/<int:course_id>/mark-record/<int:student_id>")
+@staff_required
+def mark_record(course_id: int, student_id: int | None = None):
+    """The full lecture and laboratory record: every activity behind a grade.
+
+    Without a student, prints the whole class or section, one student per
+    sheet — which is how these are actually handed out.
+    """
+    course = require_course(course_id, manage=False)
+    section_id = request.args.get("section", type=int)
+
+    if student_id:
+        students = [User.query.get_or_404(student_id)]
+    else:
+        students = course.roster(section_id)
+
+    results = {r.student.id: r for r in compute_class(course, section_id)}
+    records = []
+    for student in students:
+        result = results.get(student.id) or compute_student(course, student)
+        records.append(_mark_record(course, student, result))
+
+    section = next((s for s in course.sections if s.id == section_id), None)
+
+    return render_template(
+        "reports/mark_record.html",
+        course=course,
+        records=records,
+        section=section,
+        sections=list(course.sections),
+        section_id=section_id,
+        single=bool(student_id),
+        show_attendance=request.args.get("attendance", "1") != "0",
+        show_rubrics=request.args.get("rubrics", "1") != "0",
         printed_on=datetime.now(),
     )
 

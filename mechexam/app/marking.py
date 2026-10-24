@@ -221,7 +221,13 @@ def mark_answer(answer: Answer) -> None:
 
     if qtype == Q_ESSAY:
         answer.max_points = question.points or 0.0
-        answer.needs_manual = True
+        # An essay that has already been marked stays marked. This used to be
+        # set unconditionally, so every re-mark -- including the one that runs
+        # immediately after the instructor saves their marks -- put the answer
+        # back into the "waiting to be marked" count. The mark itself survived,
+        # but the paper was reported as provisional for ever and the
+        # instructor had no way to clear it.
+        answer.needs_manual = answer.graded_at is None
         answer.is_correct = None
         # Leave whatever the instructor has already awarded.
         answer.points_awarded = answer.points_awarded or 0.0

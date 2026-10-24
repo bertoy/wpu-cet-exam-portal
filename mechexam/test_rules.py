@@ -1847,6 +1847,174 @@ def test_password_prompts():
 
 
 # --------------------------------------------------------------------------- #
+# 14h. Printable records
+# --------------------------------------------------------------------------- #
+
+def test_printable_records():
+    """A marked paper and a mark record, and the essay marks that survive."""
+    from app.models import Rubric, RubricCriterion, RubricScore, Answer
+    from app.marking import grade_essay, mark_attempt, rescore_exam
+
+    teacher = make_instructor("print-teacher")
+    course = make_course("TEST-PRINT", teacher, laboratory=True)
+    student = make_student("2026-3001")
+    db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+
+    rubric = Rubric(course_id=course.id, name="Essay rubric", points_per_criterion=10)
+    db.session.add(rubric)
+    db.session.flush()
+    for index, title in enumerate(("Physics", "Clarity")):
+        db.session.add(RubricCriterion(rubric_id=rubric.id, title=title,
+                                       max_points=10, order_index=index))
+
+    exam = Exam(course_id=course.id, title="Printable exam", duration_minutes=60,
+                access_code="PRN", school_year=course.school_year,
+                semester=course.semester, shuffle_questions=False)
+    db.session.add(exam)
+    db.session.flush()
+
+    mcq = Question(exam_id=exam.id, qtype="mcq", text="Which one?",
+                   answer="beta", points=2, order_index=1)
+    mcq.options = ["alpha", "beta", "gamma"]
+    essay = Question(exam_id=exam.id, qtype="essay", text="Explain entropy.",
+                     points=20, order_index=2, rubric_id=rubric.id)
+    db.session.add_all([mcq, essay])
+    db.session.flush()
+
+    exam.is_open = True
+    exam.opened_at = utcnow()
+    exam.closes_at = exam.opened_at + timedelta(minutes=60)
+    attempt = Attempt(exam_id=exam.id, student_id=student.id,
+                      status=ATTEMPT_SUBMITTED, submitted_at=utcnow(), seed=1)
+    attempt.question_order = [mcq.id, essay.id]
+    db.session.add(attempt)
+    db.session.flush()
+    db.session.add_all([
+        Answer(attempt_id=attempt.id, question_id=mcq.id, response="beta"),
+        Answer(attempt_id=attempt.id, question_id=essay.id,
+               response="Entropy never decreases in an isolated system."),
+    ])
+    db.session.commit()
+    mark_attempt(attempt, list(exam.questions))
+    db.session.commit()
+
+    essay_answer = Answer.query.filter_by(
+        attempt_id=attempt.id, question_id=essay.id
+    ).first()
+    check("an unmarked essay is reported as waiting",
+          essay_answer.needs_manual)
+
+    # ---- the bug: a marked essay must stay marked through a rescore ------ #
+    grade_essay(essay_answer, 17.0, "Good, but define the system.", teacher)
+    db.session.commit()
+    check("marking an essay clears the waiting flag",
+          not reload(essay_answer).needs_manual)
+
+    rescore_exam(exam)
+    db.session.commit()
+    essay_answer = reload(essay_answer)
+    check("re-marking the exam keeps the essay's mark",
+          near(essay_answer.points_awarded, 17.0),
+          str(essay_answer.points_awarded))
+    check("re-marking does NOT put a marked essay back in the waiting queue",
+          not essay_answer.needs_manual,
+          "a marked paper would be labelled provisional for ever")
+    check("the comment survives re-marking",
+          essay_answer.feedback == "Good, but define the system.",
+          essay_answer.feedback)
+
+    attempt = reload(attempt)
+    mark_attempt(attempt, list(exam.questions))
+    db.session.commit()
+    check("and nothing is counted as pending on a fully marked paper",
+          reload(attempt).manual_pending == 0,
+          str(reload(attempt).manual_pending))
+
+    score = RubricScore(rubric_id=rubric.id, student_id=student.id,
+                        answer_id=essay_answer.id, total=17.0,
+                        comment="Clear on the direction of the inequality.")
+    score.scores = {str(c.id): 9 if c.title == "Physics" else 8
+                    for c in rubric.criteria}
+    db.session.add(score)
+    db.session.commit()
+
+    # ---- the marked paper -------------------------------------------------- #
+    with signed_in("print-teacher", "pw-print-teacher") as client:
+        response = client.get(f"/exams/attempts/{attempt.id}/report")
+        check("a marked paper prints", response.status_code == 200,
+              str(response.status_code))
+        body = response.get_data(as_text=True)
+        check("it shows what the student answered", "beta" in body)
+        check("it shows the essay they wrote",
+              "Entropy never decreases" in body)
+        check("it shows the rubric criteria",
+              "Physics" in body and "Clarity" in body)
+        check("it shows the rubric total", "17" in body)
+        check("it shows the marker's comment",
+              "direction of the inequality" in body)
+
+        hidden = client.get(
+            f"/exams/attempts/{attempt.id}/report?key=0"
+        ).get_data(as_text=True)
+        check("the correct answers can be withheld",
+              "correct</span>" not in hidden and "correct:" not in hidden)
+
+        whole = client.get(f"/exams/{exam.id}/reports")
+        check("a whole class prints in one go", whole.status_code == 200,
+              str(whole.status_code))
+        check("and the class run names the student",
+              "2026-3001" in whole.get_data(as_text=True))
+
+    # ---- the mark record --------------------------------------------------- #
+    lecture_item = add_item(course, SCOPE_LECTURE, "Written Works", "Quiz 1", 50.0)
+    set_score(lecture_item, student, 44.0)
+    lab_item = add_item(course, SCOPE_LABORATORY, "Performance Task",
+                        "Laboratory Exercise 1", 50.0)
+    set_score(lab_item, student, 45.0)
+    lecture_item.rubric_id = rubric.id
+    item_score = RubricScore(rubric_id=rubric.id, student_id=student.id,
+                             item_id=lecture_item.id, total=44.0,
+                             comment="Solid working.")
+    item_score.scores = {str(c.id): 22 for c in rubric.criteria}
+    db.session.add(item_score)
+    db.session.commit()
+
+    with signed_in("print-teacher", "pw-print-teacher") as client:
+        response = client.get(f"/reports/{course.id}/mark-record/{student.id}")
+        check("a mark record prints", response.status_code == 200,
+              str(response.status_code))
+        body = response.get_data(as_text=True)
+        check("it lists the written work", "Quiz 1" in body)
+        check("it lists the laboratory work", "Laboratory Exercise 1" in body)
+        check("it names both scopes",
+              "Lecture" in body and "Laboratory" in body)
+        check("it shows the rubric behind a gradebook mark",
+              "Solid working." in body)
+        check("it shows how the final grade is split",
+              "of the final grade" in body)
+
+        without = client.get(
+            f"/reports/{course.id}/mark-record/{student.id}?rubrics=0"
+        ).get_data(as_text=True)
+        check("the rubric breakdowns can be withheld",
+              "Solid working." not in without)
+
+        whole = client.get(f"/reports/{course.id}/mark-record")
+        check("the whole class prints in one go", whole.status_code == 200,
+              str(whole.status_code))
+
+    # ---- another instructor's class is out of reach ------------------------ #
+    stranger = make_instructor("print-stranger")
+    theirs = make_course("TEST-PRINT2", stranger)
+    with signed_in("print-teacher", "pw-print-teacher") as client:
+        check("an instructor cannot print someone else's mark records",
+              client.get(f"/reports/{theirs.id}/mark-record").status_code
+              in (403, 404))
+        check("nor someone else's marked papers",
+              client.get(f"/exams/{exam.id}/reports").status_code == 200)
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2146,6 +2314,7 @@ def main():
         ("Subject colours and appearance", test_subject_colours),
         ("The authoring assistant", test_assistant),
         ("Lifting the password prompt", test_password_prompts),
+        ("Printable records", test_printable_records),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

@@ -230,6 +230,13 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   sat on paper beats one cancelled.
 * **Item analysis**: difficulty and discrimination per question, so you can
   see which items are not working and why.
+* **The marked paper, printed.** One student's exam exactly as it was
+  answered — what they chose, what the key was, the marks for each question,
+  the sub-items of a problem one by one, and for a written answer the rubric
+  criterion by criterion with the marker's comment. Print one student, or the
+  whole class in one go with a sheet each. The correct answers and the
+  explanations can each be withheld, so the same page serves for handing back
+  and for a paper you intend to reuse.
 
 ### The authoring assistant
 
@@ -292,6 +299,13 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   so it prints per section; sections carry their programme written out in
   full. This is the sheet that is signed and filed — the working grade sheet
   below is a separate page.
+* **A full record of marks per student**, showing every activity behind the
+  grade: written works, performance tasks and major examinations, lecture and
+  laboratory separately with each component's weight, every mark with its date
+  and percentage, and where a mark came from a rubric the criteria and what
+  was given for each. Attendance is summarised at the foot. Print one student
+  or the whole section, a sheet each. This is the sheet to hand a student who
+  asks where a mark came from.
 * **Printable grade sheet** in A4 landscape with the university heading,
   signature blocks, remarks and a pass / removal / fail tally; also a class
   list, a per-student grade slip and an attendance record.

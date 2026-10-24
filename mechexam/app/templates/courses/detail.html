@@ -33,6 +33,7 @@
   <a class="button" href="{{ url_for('courses.attendance', course_id=course.id) }}">Attendance</a>
   <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id) }}">Grade sheet</a>
   <a class="button" href="{{ url_for('reports.report_of_grades', course_id=course.id) }}">Report of Grades</a>
+  <a class="button" href="{{ url_for('reports.mark_record', course_id=course.id) }}">Mark records</a>
   <a class="button" href="{{ url_for('reports.summary', course_id=course.id) }}">Summary</a>
   <a class="button" href="{{ url_for('messages.compose', course=course.id, kind='announcement') }}">Announce</a>
   <form class="inline-form" method="post" action="{{ url_for('courses.release_grades', course_id=course.id) }}">

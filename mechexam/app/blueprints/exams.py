@@ -51,6 +51,7 @@ from ..models import (
     Question,
     QuestionBank,
     Rubric,
+    RubricScore,
     Score,
     Setting,
     SubQuestion,
@@ -1596,6 +1597,112 @@ def attempt_detail(attempt_id: int):
         answers.setdefault(answer.question_id, []).append(answer)
     return render_template(
         "exams/attempt.html", attempt=attempt, exam=exam, answers=answers
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The marked paper, for printing and handing back
+# --------------------------------------------------------------------------- #
+
+def _marked_paper(attempt: Attempt) -> list[dict]:
+    """One student's paper, question by question, ready to print.
+
+    Assembled here rather than in the template because the single-student
+    report and the whole-class run must show exactly the same thing: a report
+    that disagrees with itself depending on how it was printed is worse than
+    no report.
+
+    The questions come back in the order the *student* saw them, since a
+    shuffled paper handed back in the instructor's order is confusing to check
+    against.
+    """
+    by_question: dict[int, list] = {}
+    for answer in attempt.answers:
+        by_question.setdefault(answer.question_id, []).append(answer)
+
+    questions = list(attempt.exam.questions)
+    order = attempt.question_order
+    if order:
+        indexed = {q.id: q for q in questions}
+        questions = [indexed[qid] for qid in order if qid in indexed]
+        questions += [q for q in indexed.values() if q.id not in set(order)]
+
+    rows = []
+    for number, question in enumerate(questions, start=1):
+        answers = sorted(
+            by_question.get(question.id, []),
+            key=lambda a: (a.sub_question.order_index if a.sub_question else 0),
+        )
+        earned = sum((a.points_awarded or 0.0) for a in answers)
+        possible = sum((a.max_points or 0.0) for a in answers)
+        if not possible:
+            possible = question.effective_points
+
+        rubric_score = None
+        if question.rubric is not None and answers:
+            rubric_score = (
+                RubricScore.query.filter_by(answer_id=answers[0].id).first()
+            )
+
+        rows.append({
+            "number": number,
+            "question": question,
+            "answers": answers,
+            "answer": answers[0] if answers else None,
+            "earned": earned,
+            "possible": possible,
+            "attempted": any((a.response or "").strip() for a in answers),
+            "rubric_score": rubric_score,
+        })
+    return rows
+
+
+@bp.route("/attempts/<int:attempt_id>/report")
+@staff_required
+def attempt_report(attempt_id: int):
+    """A printable record of one student's paper, with the marking shown."""
+    attempt = Attempt.query.get_or_404(attempt_id)
+    exam = _require_exam(attempt.exam_id)
+
+    return render_template(
+        "exams/attempt_report.html",
+        papers=[{"attempt": attempt, "rows": _marked_paper(attempt)}],
+        exam=exam,
+        course=exam.course,
+        single=True,
+        show_key=request.args.get("key", "1") != "0",
+        show_explanations=request.args.get("why", "1") != "0",
+        printed_on=utcnow(),
+    )
+
+
+@bp.route("/<int:exam_id>/reports")
+@staff_required
+def exam_reports(exam_id: int):
+    """Every student's marked paper, one per sheet, for handing back."""
+    exam = _require_exam(exam_id)
+
+    query = Attempt.query.filter_by(exam_id=exam.id)
+    if request.args.get("submitted", "1") != "0":
+        query = query.filter(Attempt.status == ATTEMPT_SUBMITTED)
+
+    attempts = query.all()
+    attempts.sort(key=lambda a: (a.student.sort_name if a.student else ""))
+
+    papers = [
+        {"attempt": attempt, "rows": _marked_paper(attempt)}
+        for attempt in attempts
+    ]
+
+    return render_template(
+        "exams/attempt_report.html",
+        papers=papers,
+        exam=exam,
+        course=exam.course,
+        single=False,
+        show_key=request.args.get("key", "1") != "0",
+        show_explanations=request.args.get("why", "1") != "0",
+        printed_on=utcnow(),
     )
 
 

@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Mark record · {{ course.code }}{% endblock %}
+
+{#
+  The full account behind a grade: every written work, performance task and
+  examination, lecture and laboratory, with the rubric breakdown where a mark
+  came from one. One student per printed sheet.
+
+  The grade slip is the summary; this is the evidence. A student who asks
+  where a mark came from should be able to be handed this and see it.
+#}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('courses.detail', course_id=course.id) }}">{{ course.code }}</a><span>/</span>
+    Mark record
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>Mark record</h1>
+      <p class="page-sub">
+        Every activity behind the grade — lecture and laboratory, with the
+        rubric breakdown where one was used.
+        {{ records|length }} student{{ '' if records|length == 1 else 's' }},
+        one per sheet.
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      <a class="button" href="{{ url_for('reports.gradesheet', course_id=course.id, section=section_id) }}">
+        Grade sheet
+      </a>
+    </div>
+  </div>
+
+  <div class="button-row">
+    {% if sections and not single %}
+    <span class="small muted">Section:</span>
+    {% for s in sections %}
+    <a class="button button-small {{ 'button-gold' if section_id == s.id }}"
+       href="{{ url_for('reports.mark_record', course_id=course.id, section=s.id,
+                        attendance=1 if show_attendance else 0,
+                        rubrics=1 if show_rubrics else 0) }}">{{ s.name }}</a>
+    {% endfor %}
+    <a class="button button-small {{ 'button-gold' if not section_id }}"
+       href="{{ url_for('reports.mark_record', course_id=course.id,
+                        attendance=1 if show_attendance else 0,
+                        rubrics=1 if show_rubrics else 0) }}">Everyone</a>
+    {% endif %}
+  </div>
+
+  <div class="button-row">
+    <a class="button button-small {{ 'button-gold' if show_rubrics }}"
+       href="{{ url_for(request.endpoint, **dict(request.view_args, section=section_id,
+                attendance=1 if show_attendance else 0,
+                rubrics=0 if show_rubrics else 1)) }}">
+      {{ 'Hide the rubric breakdowns' if show_rubrics else 'Show the rubric breakdowns' }}
+    </a>
+    <a class="button button-small {{ 'button-gold' if show_attendance }}"
+       href="{{ url_for(request.endpoint, **dict(request.view_args, section=section_id,
+                attendance=0 if show_attendance else 1,
+                rubrics=1 if show_rubrics else 0)) }}">
+      {{ 'Hide attendance' if show_attendance else 'Show attendance' }}
+    </a>
+  </div>
+
+  {% if not records %}
+  <div class="callout callout-info">
+    <span class="glyph" aria-hidden="true">&#8505;</span>
+    <div class="grow"><p class="mb0">No students in this selection.</p></div>
+  </div>
+  {% endif %}
+</div>
+
+{% for record in records %}
+{% set result = record.result %}
+<div class="record">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/wpu-seal.png') }}" alt="University seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">Record of Marks</p>
+  </div>
+
+  <table class="record-meta">
+    <tr>
+      <td><strong>Student:</strong> {{ record.student.name }}</td>
+      <td><strong>Student No.:</strong> {{ record.student.student_number or '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Section:</strong>
+        {{ record.enrolment.section.name if record.enrolment and record.enrolment.section else '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Programme:</strong> {{ record.student.program or '—' }}
+        {%- if record.student.year_level %} · {{ record.student.year_level }}{% endif %}</td>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+    </tr>
+  </table>
+
+  {% for scope in [result.lecture, result.laboratory] %}
+    {% if scope %}
+    <h3 class="record-scope">
+      {{ scope.label }}
+      <span class="record-scope-share">
+        {%- if course.has_laboratory -%}
+          {{ course.lecture_share|num if scope.scope == 'lecture' else course.laboratory_share|num }}% of the final grade
+        {%- else -%}
+          the whole grade
+        {%- endif -%}
+      </span>
+    </h3>
+
+    {% if scope.has_data %}
+    <table class="record-marks">
+      <thead>
+        <tr>
+          <th class="record-activity">Activity</th>
+          <th class="record-date">Date</th>
+          <th class="num">Score</th>
+          <th class="num">Out of</th>
+          <th class="num">%</th>
+        </tr>
+      </thead>
+      {% for component in scope.components %}
+      <tbody>
+        <tr class="record-component">
+          <td colspan="4">
+            {{ component.name }}
+            <span class="record-weight">{{ component.weight|num }}% of {{ scope.label|lower }}</span>
+          </td>
+          <td class="num">
+            {% if component.raw_percent is not none %}{{ component.raw_percent|pct }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+
+        {% if component.entries %}
+          {% for entry in component.entries %}
+          <tr>
+            <td class="record-activity">
+              {{ entry.item.title }}
+              {% if entry.is_override %}<span class="record-note">mark set by the instructor</span>{% endif %}
+              {% if entry.remarks %}<span class="record-note">{{ entry.remarks }}</span>{% endif %}
+            </td>
+            <td class="record-date">
+              {{ entry.item.date_given.strftime('%d %b') if entry.item.date_given else '—' }}
+            </td>
+            <td class="num">{{ entry.display }}</td>
+            <td class="num">{{ entry.max_points|num }}</td>
+            <td class="num">{% if entry.percent is not none %}{{ entry.percent|pct }}{% else %}—{% endif %}</td>
+          </tr>
+
+          {# ---- where the mark came from a rubric, show the criteria ---- #}
+          {% set score = record.rubric_scores.get(entry.item.id) %}
+          {% if show_rubrics and score and entry.item.rubric %}
+          {% set given = score.scores %}
+          <tr class="record-rubric-row">
+            <td colspan="5">
+              <table class="record-rubric">
+                <tr>
+                  <th colspan="3">Marked against “{{ entry.item.rubric.name }}”</th>
+                </tr>
+                {% for criterion in entry.item.rubric.criteria %}
+                <tr>
+                  <td>{{ criterion.title }}</td>
+                  <td class="num">{{ given.get(criterion.id|string, '—') }}</td>
+                  <td class="num">of {{ criterion.max_points|num }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="record-rubric-total">
+                  <td><strong>Total</strong></td>
+                  <td class="num"><strong>{{ score.total|num }}</strong></td>
+                  <td class="num"><strong>of {{ entry.item.rubric.total_points|num }}</strong></td>
+                </tr>
+                {% if score.comment %}
+                <tr><td colspan="3" class="record-rubric-comment">{{ score.comment }}</td></tr>
+                {% endif %}
+              </table>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5" class="record-empty">No activities recorded under this component.</td></tr>
+        {% endif %}
+      </tbody>
+      {% endfor %}
+
+      <tbody>
+        <tr class="record-scope-total">
+          <td colspan="4" class="right">{{ scope.label }} standing</td>
+          <td class="num">{{ scope.percent|pct if scope.percent is not none else '—' }}%</td>
+        </tr>
+      </tbody>
+    </table>
+    {% else %}
+    <p class="record-empty">No marks have been recorded for {{ scope.label|lower }} yet.</p>
+    {% endif %}
+    {% endif %}
+  {% endfor %}
+
+  {# ------------------------------------------------------- the final grade #}
+  <h3 class="record-scope">Final grade</h3>
+  <table class="record-final">
+    <tr>
+      <td>Lecture</td>
+      <td class="num">{{ result.lecture.percent|pct if result.lecture.percent is not none else '—' }}%</td>
+      <td class="num">× {{ course.lecture_share|num if course.has_laboratory else 100 }}%</td>
+    </tr>
+    {% if course.has_laboratory %}
+    <tr>
+      <td>Laboratory</td>
+      <td class="num">
+        {{ result.laboratory.percent|pct if result.laboratory and result.laboratory.percent is not none else '—' }}%
+      </td>
+      <td class="num">× {{ course.laboratory_share|num }}%</td>
+    </tr>
+    {% endif %}
+    <tr class="record-final-row">
+      <td><strong>Final standing</strong></td>
+      <td class="num"><strong>{{ result.final_display }}%</strong></td>
+      <td class="num"></td>
+    </tr>
+    <tr class="record-final-row">
+      <td><strong>Grade</strong></td>
+      <td class="num"><strong class="record-grade">{{ result.effective_grade }}</strong></td>
+      <td class="num"><strong>{{ result.effective_remark }}</strong></td>
+    </tr>
+  </table>
+
+  {% if show_attendance and record.attendance.sessions %}
+  <h3 class="record-scope">Attendance</h3>
+  <table class="record-final">
+    <tr>
+      <td>Meetings held</td><td class="num">{{ record.attendance.sessions }}</td><td></td>
+    </tr>
+    <tr>
+      <td>Present</td><td class="num">{{ record.attendance.present }}</td>
+      <td class="num">
+        {{ ((record.attendance.present / record.attendance.sessions) * 100)|round(1) }}%
+      </td>
+    </tr>
+    {% for label, count in [('Late', record.attendance.late),
+                            ('Excused', record.attendance.excused),
+                            ('Absent', record.attendance.absent)] %}
+    {% if count %}<tr><td>{{ label }}</td><td class="num">{{ count }}</td><td></td></tr>{% endif %}
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if result.effective_remark == 'Removal' %}
+  <p class="record-note-block">
+    This standing falls within the removal band
+    ({{ course.removal_low|pct }}–{{ course.removal_high|pct }}%). Passing the
+    removal examination gives a grade of 3.00.
+  </p>
+  {% endif %}
+  {% if result.frozen and result.frozen.was_bumped %}
+  <p class="record-note-block">
+    This grade was raised one step from {{ result.frozen.pre_removal_grade }}
+    because a removal examination was held in this subject.
+  </p>
+  {% endif %}
+
+  <table class="record-sign">
+    <tr>
+      <td class="record-sign-rule">{{ course.owner.display_name if course.owner else '' }}</td>
+      <td class="record-sign-rule">&nbsp;</td>
+    </tr>
+    <tr>
+      <td class="record-sign-caption">Instructor</td>
+      <td class="record-sign-caption">Received by the student</td>
+    </tr>
+  </table>
+
+  <p class="record-foot">
+    {{ course.code }} &middot; {{ record.student.name }} &middot;
+    printed {{ printed_on.strftime('%d %B %Y') }}
+    {%- if not course.is_finalised %} &middot; <strong>provisional, not yet finalised</strong>{% endif %}
+  </p>
+</div>
+{% endfor %}
+{% endblock %}

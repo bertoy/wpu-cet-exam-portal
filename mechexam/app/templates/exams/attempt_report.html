@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Marked paper · {{ exam.title }}{% endblock %}
+
+{#
+  A student's marked paper, for printing and handing back.
+
+  The same template serves one student and a whole class — the route builds a
+  list of papers either way, so the two cannot drift apart. Each paper is one
+  printed sheet: heading, the student's identification, what they scored, then
+  every question with what they wrote, what the key was, and where a rubric
+  was used, the marks criterion by criterion.
+#}
+
+{% block content %}
+<div class="no-print">
+  <div class="breadcrumb">
+    <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>
+    {% if single %}Marked paper{% else %}Marked papers{% endif %}
+  </div>
+
+  <div class="page-head">
+    <div class="grow">
+      <h1>{% if single %}Marked paper{% else %}Marked papers{% endif %}</h1>
+      <p class="page-sub">
+        {{ course.code }} &middot; {{ exam.title }} &middot;
+        {{ papers|length }} paper{{ '' if papers|length == 1 else 's' }}
+        {%- if not single %} &middot; one student per sheet{% endif %}
+      </p>
+    </div>
+    <div class="button-row">
+      <button type="button" class="button button-primary" onclick="window.print()">Print</button>
+      {% if single and papers %}
+      <a class="button" href="{{ url_for('exams.attempt_detail', attempt_id=papers[0].attempt.id) }}">
+        Back to marking
+      </a>
+      {% else %}
+      <a class="button" href="{{ url_for('exams.results', exam_id=exam.id) }}">Back to results</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="button-row">
+    <a class="button button-small {{ 'button-gold' if show_key }}"
+       href="{{ url_for(request.endpoint, **dict(request.view_args,
+                key=0 if show_key else 1, why=1 if show_explanations else 0)) }}">
+      {{ 'Hide the correct answers' if show_key else 'Show the correct answers' }}
+    </a>
+    <a class="button button-small {{ 'button-gold' if show_explanations }}"
+       href="{{ url_for(request.endpoint, **dict(request.view_args,
+                key=1 if show_key else 0, why=0 if show_explanations else 1)) }}">
+      {{ 'Hide the explanations' if show_explanations else 'Show the explanations' }}
+    </a>
+  </div>
+
+  {% if not papers %}
+  <div class="callout callout-info">
+    <span class="glyph" aria-hidden="true">&#8505;</span>
+    <div class="grow"><p class="mb0">Nobody has submitted this exam yet.</p></div>
+  </div>
+  {% endif %}
+</div>
+
+{% for paper in papers %}
+{% set attempt = paper.attempt %}
+<div class="marked">
+  <div class="sheet-head">
+    <img class="seal" src="{{ asset('img/wpu-seal.png') }}" alt="University seal">
+    <h1>{{ school_name }}</h1>
+    <h2>{{ college_name }}</h2>
+    <p class="line">{{ department_name }}</p>
+    <p class="title">{{ exam.title }}</p>
+  </div>
+
+  <table class="marked-meta">
+    <tr>
+      <td><strong>Student:</strong> {{ attempt.student.name if attempt.student else '—' }}</td>
+      <td><strong>Student No.:</strong> {{ attempt.student.student_number or '—' if attempt.student else '—' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Subject:</strong> {{ course.code }} — {{ course.title }}</td>
+      <td><strong>Term:</strong> {{ course.term_label }}</td>
+    </tr>
+    <tr>
+      <td><strong>Taken:</strong>
+        {{ attempt.submitted_at|dt('%d %B %Y, %I:%M %p') if attempt.submitted_at else 'not submitted' }}</td>
+      <td><strong>Programme:</strong>
+        {{ attempt.student.program or '—' if attempt.student else '—' }}</td>
+    </tr>
+  </table>
+
+  <table class="marked-score">
+    <tr>
+      <td class="marked-score-big">
+        {{ attempt.effective_score|num }} / {{ attempt.total_points|num }}
+      </td>
+      <td class="marked-score-pct">{{ attempt.percent|pct }}%</td>
+      <td class="marked-score-note">
+        {% if attempt.is_override %}
+          Score set by the instructor{% if attempt.override_note %}:
+          {{ attempt.override_note }}{% endif %}
+        {% elif attempt.manual_pending %}
+          {{ attempt.manual_pending }} written answer{{ '' if attempt.manual_pending == 1 else 's' }}
+          still to be marked — this total is not final
+        {% elif attempt.auto_submitted %}
+          Submitted automatically ({{ attempt.submit_reason or 'time expired' }})
+        {% else %}
+          Submitted by the student
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <ol class="marked-questions">
+    {% for row in paper.rows %}
+    {% set question = row.question %}
+    <li class="marked-question">
+      <div class="marked-head">
+        <span class="marked-n">{{ row.number }}.</span>
+        <span class="marked-stem" data-math data-math-source="{{ question.text }}">{{ question.text }}</span>
+        <span class="marked-marks {{ 'full' if row.earned >= row.possible and row.possible
+                                     else ('zero' if not row.earned else 'part') }}">
+          {{ row.earned|num }} / {{ row.possible|num }}
+        </span>
+      </div>
+
+      {# ---------------------------------------- multiple choice, true/false #}
+      {% if question.qtype in ('mcq', 'truefalse') %}
+        {% set answer = row.answer %}
+        <ol class="marked-options">
+          {% for option in question.options %}
+          {% set chose = answer and option == answer.response %}
+          {% set key = option == question.answer %}
+          <li class="{{ 'chose' if chose }}{{ ' key' if key and show_key }}">
+            <span class="opt-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}.</span>
+            <span data-math data-math-source="{{ option }}">{{ option }}</span>
+            {% if chose %}<span class="marked-tag">your answer</span>{% endif %}
+            {% if key and show_key %}<span class="marked-tag correct">correct</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+        {% if not row.attempted %}<p class="marked-blank">Left blank.</p>{% endif %}
+
+      {# ------------------------------------------------------- matching #}
+      {% elif question.qtype == 'matching' %}
+        {% set answer = row.answer %}
+        <table class="marked-matching">
+          <thead>
+            <tr>
+              <th>Column A</th>
+              <th>You matched it with</th>
+              {% if show_key %}<th>Correct</th>{% endif %}
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in matching_detail(answer.response if answer else '', question) %}
+            <tr>
+              <td>{{ loop.index }}. {{ line.left }}</td>
+              <td>{{ line.chose or '—' }}</td>
+              {% if show_key %}<td class="marked-key">{{ line.correct }}</td>{% endif %}
+              <td class="marked-mark">{{ '✓' if line.is_correct else '✗' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+      {# --------------------------------------------------- problem solving #}
+      {% elif question.qtype == 'multipart' %}
+        <ol class="marked-parts">
+          {% for answer in row.answers %}
+          {% set part = answer.sub_question %}
+          <li>
+            <span class="opt-letter">{{ part.label if part else '' }})</span>
+            <span data-math data-math-source="{{ part.text if part else '' }}">{{ part.text if part else '' }}</span>
+            <div class="marked-given">
+              Your answer: <strong class="mono">{{ answer.response or '—' }}</strong>
+              {%- if part and part.unit %} {{ part.unit }}{% endif %}
+              {% if show_key and part %}
+                &middot; correct: <span class="mono">{{ part.answer }}</span>
+                {%- if part.unit %} {{ part.unit }}{% endif %}
+              {% endif %}
+              <span class="marked-mark">{{ '✓' if answer.is_correct else '✗' }}</span>
+              <span class="marked-sub">{{ answer.points_awarded|num }}/{{ answer.max_points|num }}</span>
+            </div>
+          </li>
+          {% endfor %}
+        </ol>
+
+      {# -------------------------------------------------- essay and written #}
+      {% elif question.qtype == 'essay' %}
+        {% set answer = row.answer %}
+        <div class="marked-essay">{{ answer.response if answer and answer.response else '(left blank)' }}</div>
+
+        {% if row.rubric_score %}
+          {% set given = row.rubric_score.scores %}
+          <table class="marked-rubric">
+            <thead>
+              <tr>
+                <th>{{ question.rubric.name }}</th>
+                <th class="num">Marks</th>
+                <th class="num">Out of</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for criterion in question.rubric.criteria %}
+              <tr>
+                <td>
+                  {{ criterion.title }}
+                  {% if criterion.description %}
+                  <span class="marked-criterion-note">{{ criterion.description }}</span>
+                  {% endif %}
+                </td>
+                <td class="num">{{ given.get(criterion.id|string, '—') }}</td>
+                <td class="num">{{ criterion.max_points|num }}</td>
+              </tr>
+              {% endfor %}
+              {# The total sits in the body, not a <tfoot>. A tfoot is a
+                 repeating page footer in paged media, so when a browser
+                 fragments the table it defers the footer to the next page --
+                 which put a rubric's total on a sheet of its own. #}
+              <tr class="marked-rubric-total">
+                <td class="right"><strong>Total</strong></td>
+                <td class="num"><strong>{{ row.rubric_score.total|num }}</strong></td>
+                <td class="num"><strong>{{ question.rubric.total_points|num }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          {% if row.rubric_score.comment %}
+          <p class="marked-comment"><strong>On the rubric.</strong>
+            {{ row.rubric_score.comment }}</p>
+          {% endif %}
+        {% elif question.rubric %}
+          <p class="marked-blank">
+            Marked against “{{ question.rubric.name }}”
+            ({{ question.rubric.total_points|num }} points), without a
+            criterion-by-criterion breakdown recorded.
+          </p>
+        {% endif %}
+
+        {% if row.answer and row.answer.feedback
+              and not (row.rubric_score and row.rubric_score.comment == row.answer.feedback) %}
+        <p class="marked-comment"><strong>Comment.</strong> {{ row.answer.feedback }}</p>
+        {% endif %}
+        {% if row.answer and row.answer.needs_manual %}
+        <p class="marked-blank">This answer has not been marked yet.</p>
+        {% endif %}
+
+      {# ------------------------------------------- numeric and short answer #}
+      {% else %}
+        {% set answer = row.answer %}
+        <p class="marked-given">
+          Your answer: <strong class="mono">{{ answer.response or '—' if answer else '—' }}</strong>
+          {%- if question.unit %} {{ question.unit }}{% endif %}
+          {% if show_key %}
+            &middot; correct: <span class="mono">{{ question.answer }}</span>
+            {%- if question.unit %} {{ question.unit }}{% endif %}
+          {% endif %}
+          <span class="marked-mark">{{ '✓' if answer and answer.is_correct else '✗' }}</span>
+          {%- if show_key and question.tolerance_percent %}
+          <span class="marked-criterion-note">Anything within
+            ±{{ question.tolerance_percent|num }}% of the correct value was accepted.</span>
+          {% endif %}
+        </p>
+        {% if row.answer and row.answer.feedback %}
+        <p class="marked-comment"><strong>Comment.</strong> {{ row.answer.feedback }}</p>
+        {% endif %}
+      {% endif %}
+
+      {% if show_explanations and question.explanation %}
+      <p class="marked-why">
+        <strong>Why.</strong>
+        <span data-math data-math-source="{{ question.explanation }}">{{ question.explanation }}</span>
+      </p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+
+  <table class="marked-sign">
+    <tr>
+      <td class="marked-sign-rule">{{ course.owner.display_name if course.owner else '' }}</td>
+      <td class="marked-sign-rule">&nbsp;</td>
+    </tr>
+    <tr>
+      <td class="marked-sign-caption">Instructor</td>
+      <td class="marked-sign-caption">Received by the student</td>
+    </tr>
+  </table>
+
+  <p class="marked-foot">
+    {{ course.code }} &middot; {{ exam.title }} &middot;
+    {{ attempt.student.name if attempt.student else '' }} &middot;
+    printed {{ printed_on|dt('%d %B %Y') }}
+    {%- if attempt.manual_pending %} &middot; <strong>provisional</strong>{% endif %}
+  </p>
+</div>
+{% endfor %}
+{% endblock %}

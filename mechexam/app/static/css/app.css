@@ -973,6 +973,45 @@ details.panel .panel-body { padding: 0 1rem 1rem; }
     border-bottom: 0.5pt solid #000;
   }
   .rog-rule { border-bottom: 0.7pt solid #000; }
+
+  /* A marked paper prints portrait, one student per sheet. */
+  @page marked { size: A4 portrait; margin: 13mm 14mm 11mm; }
+  .marked {
+    page: marked; max-width: none; margin: 0; padding: 0;
+    border: 0; font-size: 10pt;
+  }
+  .marked + .marked { page-break-before: always; }
+  .marked-essay, .marked-comment, .marked-options li.chose {
+    background: #f2f2f2 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .marked-marks {
+    background: none !important; color: #000 !important;
+    border: 0.6pt solid #000; border-radius: 0;
+  }
+  .marked-rubric th, .marked-rubric-total td { background: #eee !important; }
+  .marked-question { border-bottom: 0.4pt dotted #666; }
+  /* The marks for a question must not be separated from the question. */
+  .marked-head { page-break-after: avoid; break-after: avoid; }
+  .marked-score td { border-top: 1pt solid #000; border-bottom: 1pt solid #000; }
+  .marked-foot { color: #000; border-top: 0.4pt solid #000; font-size: 7.5pt; }
+
+  /* The record of marks prints portrait, one student per sheet. */
+  @page record { size: A4 portrait; margin: 13mm 14mm 11mm; }
+  .record {
+    page: record; max-width: none; margin: 0; padding: 0;
+    border: 0; font-size: 9.5pt;
+  }
+  .record + .record { page-break-before: always; }
+  .record-component td, .record-rubric th, .record-rubric-total td {
+    background: #eee !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .record-marks th, .record-marks td { border-bottom: 0.3pt solid #ccc; }
+  .record-scope { border-bottom: 0.8pt solid #000; }
+  .record-scope-total td, .record-final-row td { border-top: 0.7pt solid #000; }
+  .record-foot { color: #000; border-top: 0.4pt solid #000; font-size: 7.5pt; }
+  .record-scope { page-break-after: avoid; break-after: avoid; }
   a { color: #000; text-decoration: none; }
   a[href]::after { content: ""; }
 }
@@ -1398,3 +1437,190 @@ details.tile-paint { position: relative; }
   font-size: 0.82rem; display: flex; gap: 0.45rem; align-items: baseline;
 }
 :root[data-theme="dark"] .turn-sheet { background: rgba(255, 255, 255, 0.07); }
+
+/* ---------- a marked paper, for handing back ---------------------------- */
+/*
+   One student per printed sheet. Readable on screen too, since the
+   instructor checks it there before printing a class set.
+*/
+
+.marked {
+  background: #fff; color: #000; width: 100%; max-width: 50rem;
+  margin: 0 auto 1.5rem; padding: 1.75rem 2rem; box-sizing: border-box;
+}
+.marked-meta { width: 100%; margin: 0 0 0.8rem; font-size: 0.86rem; }
+.marked-meta td { border: 0; padding: 0.1rem 0; }
+
+.marked-score { width: 100%; margin: 0 0 1.1rem; border-collapse: collapse; }
+.marked-score td {
+  border: 0; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000;
+  padding: 0.45rem 0.5rem; vertical-align: middle;
+}
+.marked-score-big { font-size: 1.3rem; font-weight: 700; white-space: nowrap; width: 1%; }
+.marked-score-pct {
+  font-size: 1.3rem; font-weight: 700; white-space: nowrap; width: 1%;
+  padding-left: 1.2rem !important;
+}
+.marked-score-note { font-size: 0.78rem; text-align: right; }
+
+.marked-questions { margin: 0; padding: 0; list-style: none; }
+.marked-question {
+  margin-bottom: 1rem; padding-bottom: 0.7rem;
+  border-bottom: 1px dotted #999;
+  orphans: 3; widows: 3;
+}
+.marked-question:last-child { border-bottom: 0; }
+
+.marked-head { display: flex; gap: 0.5rem; align-items: baseline; }
+.marked-n { font-weight: 700; flex: 0 0 auto; }
+.marked-stem { flex: 1 1 auto; }
+.marked-marks {
+  flex: 0 0 auto; font-weight: 700; white-space: nowrap;
+  padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.86rem;
+}
+.marked-marks.full { background: var(--green-100); color: var(--green-600); }
+.marked-marks.part { background: var(--amber-100); color: var(--amber-600); }
+.marked-marks.zero { background: var(--red-100); color: var(--red-600); }
+
+.marked-options { list-style: none; margin: 0.4rem 0 0; padding-left: 1.6rem; }
+.marked-options li {
+  padding: 0.1rem 0.3rem; border-radius: 4px; margin-bottom: 0.1rem;
+  font-size: 0.88rem;
+}
+.marked-options li.chose { background: var(--line-soft); }
+.marked-options li.key { outline: 1.2px solid var(--green-600); }
+.marked-tag {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+  margin-left: 0.4rem; color: var(--ink-soft);
+}
+.marked-tag.correct { color: var(--green-600); font-weight: 700; }
+
+.marked-parts { margin: 0.4rem 0 0; padding-left: 1.6rem; list-style: none; }
+.marked-parts > li { margin-bottom: 0.4rem; }
+.marked-given { font-size: 0.86rem; margin: 0.2rem 0 0; }
+.marked-mark { font-weight: 700; margin-left: 0.5rem; }
+.marked-sub { font-size: 0.78rem; color: var(--ink-soft); margin-left: 0.3rem; }
+.marked-blank { font-size: 0.8rem; font-style: italic; color: var(--ink-soft); margin: 0.3rem 0 0; }
+
+.marked-matching { margin: 0.4rem 0 0 1.6rem; font-size: 0.86rem; border-collapse: collapse; }
+.marked-matching td, .marked-matching th {
+  border: 0; padding: 0.08rem 0.7rem 0.08rem 0; text-align: left;
+}
+.marked-matching th {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ink-soft); font-weight: 700; border-bottom: 0.6px solid #999;
+  padding-bottom: 0.15rem;
+}
+.marked-matching .marked-key { color: var(--green-600); }
+
+.marked-essay {
+  margin: 0.4rem 0 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.86rem;
+  white-space: pre-wrap; border-left: 3px solid var(--line);
+  background: var(--line-soft);
+}
+
+.marked-rubric {
+  width: 100%; margin: 0.4rem 0; border-collapse: collapse; font-size: 0.84rem;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.marked-rubric th, .marked-rubric td {
+  border: 0.6px solid #999; padding: 0.2rem 0.4rem; text-align: left;
+}
+.marked-rubric th { background: var(--line-soft); font-weight: 700; }
+.marked-rubric-total td { background: var(--line-soft); }
+.marked-rubric .num { text-align: right; width: 4.5rem; }
+.marked-criterion-note {
+  display: block; font-size: 0.74rem; color: var(--ink-soft); font-style: italic;
+}
+.marked-comment {
+  font-size: 0.84rem; margin: 0.35rem 0 0; padding: 0.3rem 0.5rem;
+  background: var(--blue-100); border-radius: 4px;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.marked-why { font-size: 0.8rem; color: var(--ink-soft); margin: 0.35rem 0 0; }
+
+.marked-sign {
+  width: 100%; margin-top: 2rem; border-collapse: collapse;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.marked-sign td { border: 0; padding: 0 1.5rem; width: 50%; }
+.marked-sign-rule { border-bottom: 0.8px solid #000; text-align: center; }
+.marked-sign-caption { text-align: center; font-size: 0.76rem; padding-top: 0.15rem !important; }
+
+.marked-foot {
+  margin-top: 1.2rem; padding-top: 0.35rem; border-top: 1px solid #ccc;
+  font-size: 0.72rem; color: #555; text-align: center;
+}
+
+/* ---------- the full record of marks ------------------------------------ */
+
+.record {
+  background: #fff; color: #000; width: 100%; max-width: 50rem;
+  margin: 0 auto 1.5rem; padding: 1.75rem 2rem; box-sizing: border-box;
+}
+.record-meta { width: 100%; margin: 0 0 1rem; font-size: 0.86rem; }
+.record-meta td { border: 0; padding: 0.1rem 0; }
+
+.record-scope {
+  font-size: 0.95rem; margin: 1.1rem 0 0.35rem; padding-bottom: 0.15rem;
+  border-bottom: 1.2px solid #000;
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.record-scope-share { font-size: 0.75rem; font-weight: 400; color: #555; }
+
+.record-marks { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.record-marks th, .record-marks td {
+  border: 0; padding: 0.16rem 0.35rem; text-align: left;
+  border-bottom: 0.5px solid #ddd;
+}
+.record-marks thead th {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: #555; border-bottom: 0.8px solid #999; background: none;
+}
+.record-marks .num { text-align: right; width: 4.6rem; }
+.record-marks .record-date { width: 4.5rem; }
+.record-marks tr { page-break-inside: avoid; break-inside: avoid; }
+
+.record-component td {
+  background: var(--line-soft); font-weight: 700; padding-top: 0.3rem;
+}
+.record-weight { font-weight: 400; font-size: 0.74rem; color: #555; margin-left: 0.4rem; }
+.record-note { display: block; font-size: 0.72rem; color: #555; font-style: italic; }
+.record-empty { font-size: 0.8rem; color: #666; font-style: italic; }
+.record-scope-total td { border-top: 1px solid #000; font-weight: 700; }
+
+.record-rubric-row td { padding: 0 0 0.3rem 1.2rem !important; border-bottom: 0; }
+.record-rubric {
+  width: auto; min-width: 20rem; border-collapse: collapse; font-size: 0.76rem;
+  margin-top: 0.1rem;
+}
+.record-rubric th, .record-rubric td {
+  border: 0.5px solid #bbb; padding: 0.1rem 0.35rem; text-align: left;
+}
+.record-rubric th { background: var(--line-soft); font-size: 0.72rem; }
+.record-rubric .num { text-align: right; width: 3.4rem; }
+.record-rubric-total td { background: var(--line-soft); }
+.record-rubric-comment { font-style: italic; color: #444; }
+
+.record-final { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin-top: 0.3rem; }
+.record-final td {
+  border: 0; border-bottom: 0.5px solid #ddd; padding: 0.18rem 0.35rem;
+}
+.record-final .num { text-align: right; width: 6rem; }
+.record-final-row td { border-top: 1px solid #000; }
+.record-grade { font-size: 1.05rem; }
+
+.record-note-block { font-size: 0.78rem; margin: 0.6rem 0 0; }
+
+.record-sign {
+  width: 100%; margin-top: 2rem; border-collapse: collapse;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.record-sign td { border: 0; padding: 0 1.5rem; width: 50%; }
+.record-sign-rule { border-bottom: 0.8px solid #000; text-align: center; }
+.record-sign-caption { text-align: center; font-size: 0.76rem; padding-top: 0.15rem !important; }
+
+.record-foot {
+  margin-top: 1rem; padding-top: 0.35rem; border-top: 1px solid #ccc;
+  font-size: 0.72rem; color: #555; text-align: center;
+}
