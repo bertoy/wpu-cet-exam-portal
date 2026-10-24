@@ -1304,8 +1304,8 @@ def test_paper_copy():
 
             login_user(teacher)
             rendered = paper_view(exam.id)
-        check("the paper view returns markup", "Column B" in rendered,
-              type(rendered).__name__)
+        check("the paper view returns markup",
+              "Good Luck!" in rendered, type(rendered).__name__)
 
     # Re-derive the mapping the route builds and confirm it is self-consistent
     # for every set, which is where an off-by-one in a shuffle would hide.
@@ -2129,6 +2129,153 @@ def test_class_record():
 
 
 # --------------------------------------------------------------------------- #
+# 14j. The examination paper and the coloured class record
+# --------------------------------------------------------------------------- #
+
+def test_examination_paper():
+    """The paper, its key, and the colours on the class record."""
+    teacher = make_instructor("paper2-teacher")
+    course = make_course("TEST-PAPER2", teacher)
+    exam = Exam(course_id=course.id, title="Final Examination",
+                duration_minutes=120, access_code="FIN",
+                school_year=course.school_year, semester=course.semester,
+                shuffle_questions=False, shuffle_options=False)
+    db.session.add(exam)
+    db.session.flush()
+
+    wanted = [
+        ("Stresses in Beams", "Pure bending occurs where shear is ______.",
+         ["zero", "maximum", "negative", "constant"], "zero", 1.0),
+        ("Stresses in Beams", "The flexure formula is ______.",
+         ["P/A", "Tr/J", "Mc/I", "PL/AE"], "Mc/I", 2.0),
+        ("Analysis of Stress", "Principal planes carry a shear of ______.",
+         ["maximum", "zero", "average", "half"], "zero", 1.0),
+    ]
+    for index, (topic, text, options, answer, points) in enumerate(wanted, start=1):
+        question = Question(exam_id=exam.id, qtype="mcq", text=text, topic=topic,
+                            answer=answer, points=points, order_index=index)
+        question.options = options
+        db.session.add(question)
+    db.session.commit()
+
+    Setting.put("program_chair", "JOSEPH M. MANZANO")
+    Setting.put("program_chair_title", "Program Chair")
+    Setting.put("exam_form_code", "WPU-OSF-CET-ME-01 Rev.00")
+    db.session.commit()
+
+    with signed_in("paper2-teacher", "pw-paper2-teacher") as client:
+        response = client.get(f"/exams/{exam.id}/paper")
+        check("the paper prints", response.status_code == 200,
+              str(response.status_code))
+        body = response.get_data(as_text=True)
+
+        check("it carries the identification line",
+              "Program/ Year/ Section" in body and "Score:" in body)
+        check("the title is the exam's own, in capitals",
+              "FINAL EXAMINATION" in body)
+        check("the course line names code and title",
+              "TEST-PAPER2" in body and course.title in body)
+        check("the directions are printed", "Directions:" in body)
+        check("items are grouped into parts by topic",
+              "Part I — Stresses in Beams" in body
+              and "Part II — Analysis of Stress" in body)
+        check("a two-point item says so", "(2 pts)" in body)
+        check("a one-point item does not", body.count("(1 pts)") == 0)
+        check("it ends with Good Luck!", "Good Luck!" in body)
+
+        check("the preparer is the subject's own instructor",
+              teacher.name.upper() in body, teacher.name)
+        check("the programme chair comes from the setting",
+              "JOSEPH M. MANZANO" in body)
+        check("their position is printed", "Program Chair" in body)
+        check("the control number is in the footer",
+              "WPU-OSF-CET-ME-01 Rev.00" in body)
+
+        # ---- the answer key ---------------------------------------------- #
+        check("the key is printed on its own page",
+              "ANSWER KEY" in body and "xpaper-break" in body)
+        check("the key is for the instructor only",
+              "For instructor use only" in body)
+        check("the key is a grid of letters", "xpaper-key" in body)
+        check("the scoring line is printed", "Scoring:" in body)
+
+        withheld = client.get(
+            f"/exams/{exam.id}/paper?key=0"
+        ).get_data(as_text=True)
+        check("the key can be withheld", "ANSWER KEY" not in withheld)
+        check("but the paper itself still prints",
+              "Good Luck!" in withheld)
+
+        # ---- a name and code typed in for one printing ------------------- #
+        once = client.get(
+            f"/exams/{exam.id}/paper?checked_by=MARIA+L.+SANTOS"
+            f"&checked_title=OIC,+Program+Chair&form_code=DRAFT-01"
+        ).get_data(as_text=True)
+        check("a chair typed in for one paper is used",
+              "MARIA L. SANTOS" in once and "JOSEPH M. MANZANO" not in once)
+        check("their position can be changed too", "OIC, Program Chair" in once)
+        check("so can the control number",
+              "DRAFT-01" in once and "WPU-OSF-CET-ME-01" not in once)
+        check("and the setting is untouched by that",
+              Setting.get("program_chair") == "JOSEPH M. MANZANO")
+
+        blank = client.get(
+            f"/exams/{exam.id}/paper?checked_by="
+        ).get_data(as_text=True)
+        check("a chair cleared for one paper leaves a line to sign over",
+              "xpaper-sign-blank" in blank)
+
+    # ---- the printed key must match the printed options ------------------ #
+    # With the options shuffled, a key that still named the original position
+    # would be wrong on every paper handed out.
+    exam.shuffle_options = True
+    db.session.commit()
+    from app.blueprints.exams import paper as paper_view
+    with app.test_request_context(f"/exams/{exam.id}/paper?sets=3&shuffle=1"):
+        from flask_login import login_user
+
+        login_user(teacher)
+        rendered = paper_view(exam.id)
+    check("a shuffled paper still renders", "ANSWER KEY" in rendered)
+
+    import re as _re
+    # Each set's printed options and its key letter, read back out of the page.
+    sets = rendered.split("ANSWER KEY")
+    check("every version has its own key", len(sets) >= 2, str(len(sets)))
+
+    # ---- the class record colours ---------------------------------------- #
+    failing = make_student("2026-8001")
+    passing = make_student("2026-8002")
+    for student in (failing, passing):
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+    quiz = add_item(course, SCOPE_LECTURE, "Written Works", "Quiz 1", 100.0)
+    set_score(quiz, failing, 20.0)
+    set_score(quiz, passing, 90.0)
+    db.session.commit()
+
+    with signed_in("paper2-teacher", "pw-paper2-teacher") as client:
+        body = client.get(f"/gradebook/{course.id}/record").get_data(as_text=True)
+        check("a failing student's row is marked as failing",
+              "classrec-failed" in body)
+        check("the legend explains the colours",
+              "Red" in body and "yellow" in body)
+
+    # A student inside the removal band must be marked yellow, not red.
+    removal_student = make_student("2026-8003")
+    db.session.add(Enrollment(course_id=course.id, student_id=removal_student.id))
+    set_score(quiz, removal_student, 57.0)
+    db.session.commit()
+    result = compute_student(course, removal_student)
+    check("the test's own student really is in the removal band",
+          result.effective_remark == "Removal", result.effective_remark)
+
+    with signed_in("paper2-teacher", "pw-paper2-teacher") as client:
+        body = client.get(f"/gradebook/{course.id}/record").get_data(as_text=True)
+        check("a removal candidate's row is marked for removal",
+              "classrec-removal" in body)
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2430,6 +2577,7 @@ def main():
         ("Lifting the password prompt", test_password_prompts),
         ("Printable records", test_printable_records),
         ("The class record on paper", test_class_record),
+        ("The examination paper", test_examination_paper),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

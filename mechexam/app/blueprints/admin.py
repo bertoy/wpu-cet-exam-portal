@@ -84,6 +84,12 @@ def term():
             if request.form.get(key):
                 Setting.put(key, request.form.get(key))
 
+        # Text fields are saved even when cleared, since blanking the chair's
+        # name is a real thing to want when the post is vacant.
+        for key in ("program_chair", "program_chair_title", "exam_form_code"):
+            if key in request.form:
+                Setting.put(key, (request.form.get(key) or "").strip())
+
         # The exam-timing settings are clamped rather than trusted: too long
         # an autosave risks a student's work, too short a poll wastes the
         # server's time, and neither should be reachable by a typo.

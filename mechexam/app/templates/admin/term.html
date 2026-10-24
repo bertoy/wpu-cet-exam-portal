@@ -82,6 +82,39 @@
         </fieldset>
 
         <fieldset>
+          <legend>What is printed on an examination paper</legend>
+          <div class="field-row">
+            <div class="field">
+              <label for="program_chair">Name of the person who checks the paper</label>
+              <input type="text" id="program_chair" name="program_chair"
+                     value="{{ Setting.get('program_chair') }}"
+                     placeholder="JOSEPH M. MANZANO">
+              <p class="field-hint">
+                Printed under “Checked by:” on every paper copy. Leave it blank
+                for a ruled line to sign over. It can also be typed in for one
+                paper at a time when printing.
+              </p>
+            </div>
+            <div class="field" style="flex:0 0 13rem">
+              <label for="program_chair_title">Their position</label>
+              <input type="text" id="program_chair_title" name="program_chair_title"
+                     value="{{ Setting.get('program_chair_title') }}"
+                     placeholder="Program Chair">
+            </div>
+          </div>
+          <div class="field">
+            <label for="exam_form_code">Control number in the footer</label>
+            <input type="text" id="exam_form_code" name="exam_form_code" class="mono"
+                   value="{{ Setting.get('exam_form_code') }}"
+                   placeholder="WPU-OSF-CET-ME-01 Rev.00">
+            <p class="field-hint">
+              Printed at the foot of every page of an examination paper.
+              Change it when the college revises the form.
+            </p>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>Behaviour</legend>
           <div class="field-row">
             <div class="field">

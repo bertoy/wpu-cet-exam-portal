@@ -222,12 +222,21 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   preview looks right, the exam looks right. It creates no attempt and writes
   nothing, so it is safe to open while an exam is running, and it will show
   you another student's shuffle.
-* **A paper copy, with an answer key.** Print the same questions in the same
-  order, optionally as several shuffled versions with space for working and a
-  separate answer sheet. Each version is seeded, so reprinting Set B gives the
-  same Set B and the key you printed still matches the paper in a student's
-  hand. Power and signal are not guaranteed in Palawan, and an examination
-  sat on paper beats one cancelled.
+* **A paper copy in the college's own format, with the answer key on the last
+  page.** US Letter, Georgia 11pt, the Name / Program / Year / Section / Score
+  line across the top, the centred title block, items grouped into parts by
+  topic ("Part I — Stresses in Beams"), the four options across the page,
+  "Good Luck!", and the Prepared by / Checked by signature blocks. The
+  university seal is at the head and the form's control number at the foot;
+  both the chair's name and that control number are settings, and either can
+  be typed in for a single printing without changing the standing value.
+  Leaving the chair's name blank gives a ruled line to sign over.
+  The answer key follows a page break as a grid of letters read down each
+  column, with the scoring line beneath it. It can be switched off to print
+  the students' copies alone. Several shuffled versions can be printed, each
+  seeded so reprinting Set B gives the same Set B and its key still matches
+  the paper in a student's hand. Power and signal are not guaranteed in
+  Palawan, and an examination sat on paper beats one cancelled.
 * **Item analysis**: difficulty and discrimination per question, so you can
   see which items are not working and why.
 * **The marked paper, printed.** One student's exam exactly as it was
@@ -308,7 +317,10 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   sheet can be read alone, and you can set how many activity columns go on a
   sheet. Long class lists flow onto further sheets with the headings repeated.
   Lecture and laboratory print separately, with signature blocks for the
-  instructor, the chair and the dean.
+  instructor, the chair and the dean. **A failing row is tinted red and a
+  removal candidate yellow**, with the grade and remark themselves more
+  strongly coloured, so a class of sixty can be scanned without reading every
+  remark — and the tints survive printing rather than coming out white.
 * **A full record of marks per student**, showing every activity behind the
   grade: written works, performance tasks and major examinations, lecture and
   laboratory separately with each component's weight, every mark with its date

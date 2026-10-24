@@ -183,6 +183,40 @@ def _linkable_items(course_id: int):
     )
 
 
+_ROMAN = (
+    (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+)
+
+
+def _roman(number: int) -> str:
+    out = []
+    for value, glyph in _ROMAN:
+        while number >= value:
+            out.append(glyph)
+            number -= value
+    return "".join(out)
+
+
+def _key_grid(rows: list[dict], per_column: int) -> list[list[dict | None]]:
+    """Lay the answer key out in columns read downwards.
+
+    The instructor's own key is a grid of five pairs across and ten rows
+    down, read down each column rather than across the page, so that is how
+    this is built: column one holds items 1-10, column two 11-20, and so on.
+    """
+    columns = [
+        rows[start:start + per_column]
+        for start in range(0, len(rows), per_column)
+    ]
+    grid = []
+    for line in range(per_column):
+        grid.append([
+            column[line] if line < len(column) else None
+            for column in columns
+        ])
+    return grid
+
+
 def _bounded(value, fallback: int, low: int, high: int) -> int:
     """Keep a submitted number inside the range the setting makes sense in."""
     if value is None:
@@ -1250,10 +1284,10 @@ def paper(exam_id: int):
         .all()
     )
 
-    show_key = request.args.get("key") == "1"
+    show_key = request.args.get("key", "1") != "0"
     shuffle = request.args.get("shuffle") == "1"
     sets = max(1, min(request.args.get("sets", type=int) or 1, 4))
-    answer_sheet = request.args.get("sheet", "1") != "0"
+    answer_sheet = request.args.get("sheet") == "1"
     spacing = request.args.get("space", "normal")
 
     letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -1276,9 +1310,25 @@ def paper(exam_id: int):
 
             if question.qtype in (Q_MCQ, Q_TRUEFALSE):
                 options = list(question.options or [])
+                if question.qtype == Q_MCQ and exam.shuffle_options and shuffle:
+                    rng.shuffle(options)
+                row["options"] = options
+                # How many across. The Word template's tab stops leave only
+                # about 1.2in for the fourth option, so anything longer than a
+                # word or two wrapped down the page. Four equal columns fit
+                # the same arrangement without wrapping; longer options drop
+                # to two across and the longest to one per line.
+                longest = max((len(str(o)) for o in options), default=0)
+                if longest <= 22 and len(options) <= 4:
+                    row["columns"] = 4
+                elif longest <= 48:
+                    row["columns"] = 2
+                else:
+                    row["columns"] = 1
                 for position, option in enumerate(options):
                     if option == question.answer:
                         row["key"] = f"{letters[position]} — {option}"
+                        row["key_letter"] = letters[position]
                         break
                 slots.append(f"{number}")
 
@@ -1320,10 +1370,31 @@ def paper(exam_id: int):
 
             rows.append(row)
 
+        # Items are grouped into parts by topic, the way a paper is written:
+        # "Part I — Stresses in Beams". A paper whose questions carry no topic
+        # simply has no part headings, which is correct rather than a blank
+        # one.
+        parts = []
+        for row in rows:
+            topic = (row["question"].topic or "").strip()
+            if parts and parts[-1]["topic"] == topic:
+                parts[-1]["rows"].append(row)
+            else:
+                parts.append({"topic": topic, "rows": [row]})
+        if len(parts) == 1 and not parts[0]["topic"]:
+            parts[0]["numeral"] = ""
+        else:
+            for position, part in enumerate(parts, start=1):
+                part["numeral"] = _roman(position)
+
         papers.append({
             "label": letters[index] if sets > 1 else "",
             "rows": rows,
+            "parts": parts,
             "slots": slots,
+            # The answer key is a five-column grid read down each column, as
+            # on the instructor's own paper.
+            "key_rows": _key_grid(rows, 10),
         })
 
     return render_template(
@@ -1337,6 +1408,23 @@ def paper(exam_id: int):
         answer_sheet=answer_sheet,
         spacing=spacing,
         total_points=sum(q.effective_points for q in questions),
+        definition_items=sum(1 for q in questions if (q.effective_points or 0) <= 1),
+        problem_items=sum(1 for q in questions if (q.effective_points or 0) > 1),
+        checked_by=(
+            request.args["checked_by"] if "checked_by" in request.args
+            else Setting.get("program_chair", "")
+        ).strip(),
+        checked_title=(request.args.get("checked_title")
+                       or Setting.get("program_chair_title", "")).strip()
+        or "Program Chair",
+        prepared_by=(request.args.get("prepared_by") or "").strip()
+        or (exam.course.owner.name if exam.course.owner else ""),
+        prepared_title=(request.args.get("prepared_title") or "Faculty").strip(),
+        form_code=(
+            request.args["form_code"] if "form_code" in request.args
+            else Setting.get("exam_form_code", "")
+        ).strip(),
+        directions=(request.args.get("directions") or "").strip(),
     )
 
 

@@ -73,6 +73,12 @@ class Setting(db.Model):
         # term; wrong on the morning of an examination, when it puts a form
         # between sixty students and their paper.
         "new_students_must_change_password": "1",
+        # Printed on an examination paper: who checks it, and the control
+        # number in the footer. Both change -- a chair leaves, a form is
+        # revised -- so neither is written into a template.
+        "program_chair": "",
+        "program_chair_title": "Program Chair",
+        "exam_form_code": "WPU-OSF-CET-ME-01 Rev.00",
     }
 
     # Bounds for the exam-timing settings. The upper limit on autosave is a

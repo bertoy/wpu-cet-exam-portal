@@ -141,7 +141,8 @@
     <tbody>
       {% for line in sheet.rows %}
       {% set result = line.result %}
-      <tr>
+      <tr class="{{ 'classrec-failed' if result.effective_remark == 'Failed'
+                    else ('classrec-removal' if result.effective_remark == 'Removal' else '') }}">
         <td class="classrec-n">{{ loop.index }}</td>
         <td class="classrec-name">
           {{ result.student.name }}
@@ -173,7 +174,7 @@
             {%- else -%}—{%- endif -%}
           </td>
           <td class="num classrec-sum">{{ result.final_display }}</td>
-          <td class="mid classrec-sum"><strong>{{ result.effective_grade }}</strong></td>
+          <td class="mid classrec-sum classrec-grade"><strong>{{ result.effective_grade }}</strong></td>
           <td class="mid classrec-sum classrec-remark">{{ result.effective_remark }}</td>
         {% endif %}
       </tr>
@@ -185,6 +186,9 @@
     <div class="classrec-legend">
       An empty cell means nothing was recorded; it is not counted as a zero.
       An asterisk marks a figure entered by hand.
+      <strong class="classrec-key-fail">Red</strong> is a failing grade and
+      <strong class="classrec-key-removal">yellow</strong> is a candidate for
+      the removal examination.
       {% if course.has_laboratory %}
         This subject is {{ course.lecture_share|num }}% lecture and
         {{ course.laboratory_share|num }}% laboratory.

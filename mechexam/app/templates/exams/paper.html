@@ -1,10 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Paper copy · {{ exam.title }}{% endblock %}
 
+{#
+  The examination paper, laid out as the instructor's own Word template lays
+  it out: US Letter, Georgia 11pt, the identification line across the top, the
+  centred title block, items numbered with their options on four tab stops,
+  "Good Luck!", the two signature blocks, and the answer key on its own last
+  page as a grid read down each column.
+
+  What is NOT copied from that template: the logo and the footer control
+  number, which it does not carry. Both are asked for, so both are here, and
+  the control number is a setting rather than a line in this file because a
+  revised form changes it.
+#}
+
 {% block content %}
 <div class="no-print">
   <div class="breadcrumb">
-    <a href="{{ url_for('exams.index') }}">Examinations</a><span>/</span>
     <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Paper copy
   </div>
 
@@ -12,9 +24,8 @@
     <div class="grow">
       <h1>Paper copy</h1>
       <p class="page-sub">
-        The same questions in the same order as on screen. Print this before
-        every major examination and a power cut becomes an inconvenience
-        rather than a cancelled exam.
+        {{ course.code }} &middot; the same questions in the same order as on
+        screen, laid out as your own paper. The answer key is on the last page.
       </p>
     </div>
     <div class="button-row">
@@ -24,58 +35,104 @@
   </div>
 
   <div class="card">
-    <div class="card-head"><h2 class="grow">What to print</h2></div>
+    <div class="card-head"><h2 class="grow">What goes on the paper</h2></div>
     <div class="card-body">
-      <form method="get" class="field-row">
-        <div class="field">
-          <label for="sets">Number of versions</label>
-          <select id="sets" name="sets">
-            {% for n in [1, 2, 3, 4] %}
-            <option value="{{ n }}" {{ 'selected' if sets == n }}>
-              {{ 'One paper' if n == 1 else n ~ ' versions (Set A, B…)' }}
-            </option>
-            {% endfor %}
-          </select>
-          <p class="field-hint">
-            Several versions, shuffled, make copying off a neighbour pointless
-            in a crowded room. Each version keeps its order when reprinted, so
-            the key always matches the paper.
-          </p>
+      <form method="get">
+        <div class="field-row">
+          <div class="field">
+            <label for="prepared_by">Prepared by</label>
+            <input type="text" id="prepared_by" name="prepared_by" value="{{ prepared_by }}">
+          </div>
+          <div class="field" style="flex:0 0 11rem">
+            <label for="prepared_title">Position</label>
+            <input type="text" id="prepared_title" name="prepared_title" value="{{ prepared_title }}">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="checked_by">Checked by</label>
+            <input type="text" id="checked_by" name="checked_by" value="{{ checked_by }}"
+                   placeholder="the programme chair's name">
+            <p class="field-hint">
+              Blank leaves a ruled line to sign over. Set a standing name in
+              Administration ▸ Year &amp; semester so it fills in by itself.
+            </p>
+          </div>
+          <div class="field" style="flex:0 0 11rem">
+            <label for="checked_title">Position</label>
+            <input type="text" id="checked_title" name="checked_title" value="{{ checked_title }}">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="form_code">Control number in the footer</label>
+            <input type="text" id="form_code" name="form_code" class="mono" value="{{ form_code }}">
+          </div>
+          <div class="field" style="flex:0 0 11rem">
+            <label for="sets">Versions</label>
+            <select id="sets" name="sets">
+              {% for n in [1, 2, 3, 4] %}
+              <option value="{{ n }}" {{ 'selected' if sets == n }}>
+                {{ 'One paper' if n == 1 else n ~ ' versions' }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field" style="flex:0 0 12rem">
+            <label for="space">Space for working</label>
+            <select id="space" name="space">
+              <option value="tight" {{ 'selected' if spacing == 'tight' }}>Tight</option>
+              <option value="normal" {{ 'selected' if spacing == 'normal' }}>Normal</option>
+              <option value="wide" {{ 'selected' if spacing == 'wide' }}>Wide</option>
+            </select>
+          </div>
         </div>
         <div class="field">
-          <label for="space">Space for working</label>
-          <select id="space" name="space">
-            <option value="tight" {{ 'selected' if spacing == 'tight' }}>Tight — saves paper</option>
-            <option value="normal" {{ 'selected' if spacing == 'normal' }}>Normal</option>
-            <option value="wide" {{ 'selected' if spacing == 'wide' }}>Wide — room for solutions</option>
-          </select>
+          <label for="directions">Directions</label>
+          <textarea id="directions" name="directions" rows="2"
+                    placeholder="Leave blank to use the standard wording.">{{ directions }}</textarea>
         </div>
+        <input type="hidden" name="key" value="{{ 1 if show_key else 0 }}">
+        <input type="hidden" name="shuffle" value="{{ 1 if shuffle else 0 }}">
+        <input type="hidden" name="sheet" value="{{ 1 if answer_sheet else 0 }}">
+        <button type="submit" class="button button-primary">Apply</button>
       </form>
-      <div class="button-row">
-        <a class="button {{ 'button-gold' if sets > 1 and shuffle }}"
-           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
-                            shuffle=0 if shuffle else 1, sheet=1 if answer_sheet else 0) }}">
-          {{ 'Same order in every version' if shuffle else 'Shuffle the later versions' }}
-        </a>
-        <a class="button {{ 'button-gold' if answer_sheet }}"
-           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
-                            shuffle=1 if shuffle else 0, sheet=0 if answer_sheet else 1) }}">
-          {{ 'Without an answer sheet' if answer_sheet else 'With an answer sheet' }}
-        </a>
-        <a class="button {{ 'button-gold' if show_key }}"
+
+      <div class="button-row mt1">
+        <a class="button button-small {{ 'button-gold' if show_key }}"
            href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
                             shuffle=1 if shuffle else 0, sheet=1 if answer_sheet else 0,
-                            key=0 if show_key else 1) }}">
-          {{ 'Hide the answer key' if show_key else 'Add the answer key' }}
+                            key=0 if show_key else 1, prepared_by=prepared_by,
+                            checked_by=checked_by, form_code=form_code,
+                            directions=directions) }}">
+          {{ 'Without the answer key' if show_key else 'With the answer key' }}
+        </a>
+        <a class="button button-small {{ 'button-gold' if shuffle }}"
+           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
+                            shuffle=0 if shuffle else 1, sheet=1 if answer_sheet else 0,
+                            key=1 if show_key else 0, prepared_by=prepared_by,
+                            checked_by=checked_by, form_code=form_code,
+                            directions=directions) }}">
+          {{ 'Same order in every version' if shuffle else 'Shuffle the later versions' }}
+        </a>
+        <a class="button button-small {{ 'button-gold' if answer_sheet }}"
+           href="{{ url_for('exams.paper', exam_id=exam.id, sets=sets, space=spacing,
+                            shuffle=1 if shuffle else 0, sheet=0 if answer_sheet else 1,
+                            key=1 if show_key else 0, prepared_by=prepared_by,
+                            checked_by=checked_by, form_code=form_code,
+                            directions=directions) }}">
+          {{ 'Without a separate answer sheet' if answer_sheet else 'Add a separate answer sheet' }}
         </a>
       </div>
+
       {% if show_key %}
       <div class="callout callout-warning">
         <span class="glyph" aria-hidden="true">&#9888;</span>
         <div class="grow">
           <p class="mb0">
-            The answer key is included below and will print. Print the papers
-            and the key separately unless you are keeping both.
+            The answer key is the last page. Print pages 1 to
+            {{ '(last − 1)' }} for the students and keep the last page, or
+            switch the key off above.
           </p>
         </div>
       </div>
@@ -85,69 +142,66 @@
 </div>
 
 {% for paper in papers %}
-<div class="sheet paper paper-{{ spacing }}">
-  <div class="sheet-head">
-    <img class="seal" src="{{ asset('img/cet-seal.png') }}" alt="College seal">
-    <h1>{{ school_name }}</h1>
-    <h2>{{ college_name }}</h2>
-    <p class="line">{{ department_name }}</p>
-    <p class="title">
-      {{ exam.title }}{% if paper.label %} &mdash; Set {{ paper.label }}{% endif %}
-    </p>
+{# ------------------------------------------------------------ the paper #}
+<div class="xpaper xpaper-{{ spacing }}">
+  <div class="xpaper-crest">
+    <img src="{{ asset('img/wpu-seal.png') }}" alt="University seal">
+    <div>
+      <p class="xpaper-univ">{{ school_name }}</p>
+      <p class="xpaper-coll">{{ college_name }}</p>
+      <p class="xpaper-dept">{{ department_name }}</p>
+    </div>
   </div>
 
-  <table class="paper-meta">
-    <tr>
-      <td><strong>Subject:</strong> {{ course.code }} &mdash; {{ course.title }}</td>
-      <td><strong>Term:</strong> {{ course.term_label }}</td>
-    </tr>
-    <tr>
-      <td><strong>Time allowed:</strong> {{ exam.duration_minutes }} minutes</td>
-      <td><strong>Total:</strong> {{ total_points|num }} points</td>
-    </tr>
-  </table>
+  <p class="xpaper-identity">
+    Name: ___________________
+    &nbsp;&nbsp;Program/ Year/ Section: __________
+    &nbsp;&nbsp;Score: _______
+  </p>
 
-  <table class="paper-meta">
-    <tr>
-      <td style="width:55%">Name: ______________________________________</td>
-      <td style="width:20%">Section: ______________</td>
-      <td style="width:25%">Score: ________ / {{ total_points|num }}</td>
-    </tr>
-  </table>
+  <p class="xpaper-title">
+    {{ exam.title|upper }}{% if paper.label %} — SET {{ paper.label }}{% endif %}
+  </p>
+  <p class="xpaper-course">{{ course.code }} — {{ course.title }}</p>
 
-  {% if exam.instructions %}
-  <p class="small"><strong>Instructions.</strong> {{ exam.instructions }}</p>
-  {% endif %}
+  <p class="xpaper-lead">Multiple Choice.</p>
+  <p class="xpaper-directions">
+    Directions:
+    {% if directions %}{{ directions }}{% else %}Read each item carefully and
+    choose the letter of the best answer. Shade your choice on the answer sheet
+    provided. Any erasures are discouraged. Fill in the blank where an item
+    shows a line (______). Use standard values; express intermediate results to
+    at least four significant figures before rounding.{% endif %}
+  </p>
 
-  <ol class="paper-questions">
-    {% for row in paper.rows %}
+  {% for part in paper.parts %}
+    {% if part.topic %}
+    <p class="xpaper-part">Part {{ part.numeral }} — {{ part.topic }}</p>
+    {% endif %}
+
+    {% for row in part.rows %}
     {% set question = row.question %}
-    <li class="paper-question">
-      <span class="paper-marks">({{ question.effective_points|num }})</span>
-      <div class="paper-stem" data-math data-math-source="{{ question.text }}">{{ question.text }}</div>
-
-      {% if question.figure_path %}
-        <img class="paper-figure" src="{{ url_for('exams.figure', name=question.figure_path) }}"
-             alt="{{ question.figure_caption or 'Figure' }}">
-        {% if question.figure_caption %}
-        <p class="small mb0"><em>{{ question.figure_caption }}</em></p>
-        {% endif %}
-      {% endif %}
+    <div class="xpaper-item">
+      <p class="xpaper-q">
+        {{ row.number }}.&nbsp;
+        <span data-math data-math-source="{{ question.text }}">{{ question.text }}</span>
+        {%- if (question.effective_points or 0) > 1 %}
+          &nbsp;({{ question.effective_points|num }} pts){% endif %}
+      </p>
 
       {% if question.qtype in ('mcq', 'truefalse') %}
-        <ol class="paper-options">
-          {% for option in question.options %}
-          <li><span class="opt-letter">{{ 'ABCDEFGHIJ'[loop.index0] }}.</span>
-            <span data-math data-math-source="{{ option }}">{{ option }}</span></li>
-          {% endfor %}
-        </ol>
+        <p class="xpaper-options xpaper-cols-{{ row.columns or 4 }}">
+          {%- for option in row.options or question.options -%}
+          <span class="xpaper-opt">{{ 'ABCDEFGHIJ'[loop.index0] }}.
+            <span data-math data-math-source="{{ option }}">{{ option }}</span></span>
+          {%- endfor -%}
+        </p>
 
       {% elif question.qtype == 'matching' %}
-        <table class="paper-matching">
-          <tr><th style="width:4em">Answer</th><th>Column A</th><th>Column B</th></tr>
+        <table class="xpaper-matching">
           {% for pair in question.pairs %}
           <tr>
-            <td>________</td>
+            <td class="xpaper-blank">______</td>
             <td>{{ loop.index }}. {{ pair.left }}</td>
             <td>{{ 'ABCDEFGHIJKLMNOPQRST'[loop.index0] }}. {{ row.column_b[loop.index0].right }}</td>
           </tr>
@@ -155,85 +209,125 @@
         </table>
 
       {% elif question.qtype == 'multipart' %}
-        <ol class="paper-parts">
-          {% for part in question.parts %}
+        <ol class="xpaper-parts">
+          {% for part_item in question.parts %}
           <li>
-            <span class="opt-letter">{{ part.label or 'abcdefgh'[loop.index0] }})</span>
-            <span data-math data-math-source="{{ part.text }}">{{ part.text }}</span>
-            <span class="paper-marks">({{ part.points|num }})</span>
-            <div class="paper-work"></div>
+            <span class="xpaper-label">{{ part_item.label or 'abcdefgh'[loop.index0] }})</span>
+            <span data-math data-math-source="{{ part_item.text }}">{{ part_item.text }}</span>
+            {%- if (part_item.points or 0) > 1 %} ({{ part_item.points|num }} pts){% endif %}
+            <span class="xpaper-work"></span>
           </li>
           {% endfor %}
         </ol>
 
       {% elif question.qtype == 'essay' %}
-        <div class="paper-lines">
-          {% for _ in range(8) %}<div class="paper-line"></div>{% endfor %}
+        <div class="xpaper-lines">
+          {% for _ in range(8) %}<div class="xpaper-line"></div>{% endfor %}
         </div>
 
       {% else %}
-        <div class="paper-work"></div>
-        <p class="paper-answer-line">
+        <div class="xpaper-work"></div>
+        <p class="xpaper-answer">
           Answer: ____________________{% if question.unit %} {{ question.unit }}{% endif %}
         </p>
       {% endif %}
-    </li>
+    </div>
     {% endfor %}
-  </ol>
+  {% endfor %}
 
-  <p class="paper-foot">
-    {{ exam.title }}{% if paper.label %} &mdash; Set {{ paper.label }}{% endif %}
-    &middot; {{ course.code }} &middot; {{ course.term_label }}
-  </p>
-</div>
+  <p class="xpaper-goodluck">Good Luck!</p>
 
-{% if answer_sheet and paper.slots %}
-<div class="sheet paper paper-break">
-  <div class="sheet-head">
-    <p class="title">
-      Answer Sheet &mdash; {{ exam.title }}{% if paper.label %} (Set {{ paper.label }}){% endif %}
-    </p>
-  </div>
-  <table class="paper-meta">
+  <table class="xpaper-sign">
     <tr>
-      <td style="width:55%">Name: ______________________________________</td>
-      <td style="width:20%">Section: ______________</td>
-      <td style="width:25%">Score: ________</td>
+      <td>
+        <p class="xpaper-sign-lead">Prepared by:</p>
+        <p class="xpaper-sign-name">{{ prepared_by|upper or '&nbsp;'|safe }}</p>
+        <p class="xpaper-sign-role">{{ prepared_title }}</p>
+      </td>
+      <td>
+        <p class="xpaper-sign-lead">Checked by:</p>
+        <p class="xpaper-sign-name {{ 'xpaper-sign-blank' if not checked_by }}">
+          {{ checked_by|upper if checked_by else '' }}
+        </p>
+        <p class="xpaper-sign-role">{{ checked_title }}</p>
+      </td>
     </tr>
   </table>
-  <ol class="answer-grid">
+
+  {% if form_code %}<p class="xpaper-code">{{ form_code }}</p>{% endif %}
+</div>
+
+{# ------------------------------------------------- a separate answer sheet #}
+{% if answer_sheet and paper.slots %}
+<div class="xpaper xpaper-break">
+  <p class="xpaper-identity">
+    Name: ___________________
+    &nbsp;&nbsp;Program/ Year/ Section: __________
+    &nbsp;&nbsp;Score: _______
+  </p>
+  <p class="xpaper-title">
+    ANSWER SHEET{% if paper.label %} — SET {{ paper.label }}{% endif %}
+  </p>
+  <p class="xpaper-course">{{ course.code }} — {{ exam.title }}</p>
+  <ol class="xpaper-sheet">
     {% for slot in paper.slots %}
-    <li><span class="slot-no">{{ slot }}.</span> ______________</li>
+    <li><span class="xpaper-slot">{{ slot }}.</span> ______________</li>
     {% endfor %}
   </ol>
-  <p class="small">
-    Essay questions and shown working are answered on the paper itself.
-  </p>
+  {% if form_code %}<p class="xpaper-code">{{ form_code }}</p>{% endif %}
 </div>
 {% endif %}
 
+{# ------------------------------------------------- the key, its own page #}
 {% if show_key %}
-<div class="sheet paper paper-break">
-  <div class="sheet-head">
-    <p class="title">
-      ANSWER KEY &mdash; {{ exam.title }}{% if paper.label %} (Set {{ paper.label }}){% endif %}
-    </p>
-  </div>
-  <table class="paper-meta">
-    <tr>
-      <td><strong>{{ course.code }}</strong> &mdash; {{ course.title }}</td>
-      <td><strong>Total:</strong> {{ total_points|num }} points</td>
-    </tr>
-  </table>
-  <ol class="answer-grid wide">
-    {% for row in paper.rows %}
-    <li>
-      <span class="slot-no">{{ row.number }}.</span>
-      {{ row.key }}
-      <span class="small">[{{ row.question.effective_points|num }}]</span>
-    </li>
-    {% endfor %}
-  </ol>
+<div class="xpaper xpaper-break">
+  <p class="xpaper-title">ANSWER KEY</p>
+  <p class="xpaper-keysub">
+    {{ course.code }} {{ exam.title }} — {{ course.title }}
+    {%- if paper.label %} (Set {{ paper.label }}){% endif %}
+    (For instructor use only)
+  </p>
+
+  {% set simple = paper.rows|selectattr('key_letter')|list %}
+  {% if simple|length == paper.rows|length %}
+    <table class="xpaper-key">
+      {% for line in paper.key_rows %}
+      <tr>
+        {% for cell in line %}
+          {% if cell %}
+            <td class="xpaper-key-n">{{ cell.number }}.</td>
+            <td class="xpaper-key-a">{{ cell.key_letter }}</td>
+          {% else %}
+            <td></td><td></td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    {# Not every item is a lettered choice, so the grid would lose the rest. #}
+    <table class="xpaper-key xpaper-key-long">
+      {% for row in paper.rows %}
+      <tr>
+        <td class="xpaper-key-n">{{ row.number }}.</td>
+        <td class="xpaper-key-a">{{ row.key_letter or '' }}</td>
+        <td class="xpaper-key-full">{{ row.key }}</td>
+        <td class="xpaper-key-pts">[{{ row.possible|num if row.possible is defined
+                                       else row.question.effective_points|num }}]</td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  <p class="xpaper-scoring">
+    Scoring: {{ definition_items }} definition item{{ '' if definition_items == 1 else 's' }}
+    × 1 pt = {{ definition_items }} pts;
+    {{ problem_items }} problem item{{ '' if problem_items == 1 else 's' }}
+    = {{ (total_points - definition_items)|num }} pts.
+    Total = {{ total_points|num }} pts.
+  </p>
+
+  {% if form_code %}<p class="xpaper-code">{{ form_code }}</p>{% endif %}
 </div>
 {% endif %}
 {% endfor %}
