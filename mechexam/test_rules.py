@@ -2276,6 +2276,209 @@ def test_examination_paper():
 
 
 # --------------------------------------------------------------------------- #
+# 14k. Leaving the exam actually ends it
+# --------------------------------------------------------------------------- #
+
+def test_away_and_idle_submit():
+    """The server ends an abandoned attempt, device or no device."""
+    from app.blueprints.taking import sweep_exam
+
+    teacher = make_instructor("away-teacher")
+    course = make_course("TEST-AWAY", teacher)
+
+    def fresh(number, **kwargs):
+        exam = Exam(course_id=course.id, title=f"Away {number}",
+                    duration_minutes=60, access_code="AWY",
+                    exit_mode=kwargs.pop("exit_mode", "strict"),
+                    lock_grace_seconds=kwargs.pop("lock_grace_seconds", 10),
+                    idle_seconds=kwargs.pop("idle_seconds", 0),
+                    school_year=course.school_year, semester=course.semester)
+        db.session.add(exam)
+        db.session.flush()
+        db.session.add(Question(exam_id=exam.id, qtype=Q_NUMERIC, text="2+2?",
+                                answer="4", points=1, order_index=1))
+        student = make_student(number)
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+        exam.is_open = True
+        exam.opened_at = utcnow()
+        exam.closes_at = exam.opened_at + timedelta(minutes=60)
+        db.session.commit()
+        return exam, student
+
+    # ---- away longer than the allowance, and never coming back ---------- #
+    exam, student = fresh("AWY-0001")
+    with signed_in("AWY-0001", "AWY-0001") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event",
+                    data={"kind": "hidden", "detail": "switched apps"})
+
+    attempt = reload(attempt)
+    check("leaving the screen is recorded on the attempt itself",
+          attempt.away_since is not None,
+          "the server has no clock on the absence")
+    check("and nothing is submitted straight away",
+          attempt.status == ATTEMPT_IN_PROGRESS, attempt.status)
+
+    # Nothing from that device again. The server must act on its own.
+    attempt.away_since = utcnow() - timedelta(seconds=11)
+    db.session.commit()
+    swept = sweep_exam(reload(exam))
+    check("the server submits an attempt abandoned past the allowance",
+          swept == 1, str(swept))
+    attempt = reload(attempt)
+    check("the attempt really is submitted",
+          attempt.status == ATTEMPT_SUBMITTED, attempt.status)
+    check("it is marked as automatic", attempt.auto_submitted)
+    check("and the reason says they left",
+          (attempt.submit_reason or "").startswith("exit"),
+          attempt.submit_reason)
+    check("the student can see why it ended",
+          any(e.kind == "auto_submit" and "away" in (e.detail or "")
+              for e in attempt.events))
+
+    # ---- back inside the allowance: nothing happens --------------------- #
+    exam, student = fresh("AWY-0002")
+    with signed_in("AWY-0002", "AWY-0002") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event",
+                    data={"kind": "hidden", "detail": "screen off"})
+        client.post(f"/take/attempt/{attempt.id}/event",
+                    data={"kind": "interruption", "detail": "away 3s"})
+
+    attempt = reload(attempt)
+    check("coming back clears the server's clock", attempt.away_since is None)
+    sweep_exam(reload(exam))
+    check("and a short absence submits nothing",
+          reload(attempt).status == ATTEMPT_IN_PROGRESS)
+
+    # ---- typing clears it too ------------------------------------------- #
+    exam, student = fresh("AWY-0003")
+    with signed_in("AWY-0003", "AWY-0003") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event", data={"kind": "hidden"})
+        question = exam.questions[0]
+        client.post(f"/take/attempt/{attempt.id}/autosave",
+                    data={f"q{question.id}": "4"})
+    check("saving an answer means they are back",
+          reload(attempt).away_since is None)
+
+    # ---- the allowance can go down to five seconds ---------------------- #
+    exam, student = fresh("AWY-0004", lock_grace_seconds=5)
+    with signed_in("away-teacher", "pw-away-teacher") as client:
+        client.post(f"/exams/{exam.id}/settings", data={
+            "title": exam.title, "duration_minutes": "60",
+            "exit_mode": "strict", "lock_grace_seconds": "5",
+            "exit_allowance": "0",
+        }, follow_redirects=True)
+    exam = reload(exam)
+    check("five seconds is accepted", exam.lock_grace_seconds == 5,
+          str(exam.lock_grace_seconds))
+
+    with signed_in("AWY-0004", "AWY-0004") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event", data={"kind": "hidden"})
+    attempt = reload(attempt)
+    attempt.away_since = utcnow() - timedelta(seconds=6)
+    db.session.commit()
+    sweep_exam(reload(exam))
+    check("six seconds away ends a five-second exam",
+          reload(attempt).status == ATTEMPT_SUBMITTED,
+          reload(attempt).status)
+
+    # ---- the inactivity limit ------------------------------------------- #
+    exam, student = fresh("AWY-0005", idle_seconds=30)
+    with signed_in("AWY-0005", "AWY-0005") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+    attempt = reload(attempt)
+    attempt.last_activity_at = utcnow() - timedelta(seconds=10)
+    db.session.commit()
+    sweep_exam(reload(exam))
+    check("someone still working is left alone",
+          reload(attempt).status == ATTEMPT_IN_PROGRESS)
+
+    attempt = reload(attempt)
+    attempt.last_activity_at = utcnow() - timedelta(seconds=31)
+    db.session.commit()
+    sweep_exam(reload(exam))
+    attempt = reload(attempt)
+    check("but a long silence ends the exam",
+          attempt.status == ATTEMPT_SUBMITTED, attempt.status)
+    check("and the reason says so", attempt.submit_reason == "idle",
+          attempt.submit_reason)
+
+    # ---- with the limit off, silence is fine ---------------------------- #
+    exam, student = fresh("AWY-0006", idle_seconds=0)
+    with signed_in("AWY-0006", "AWY-0006") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+    attempt = reload(attempt)
+    attempt.last_activity_at = utcnow() - timedelta(hours=2)
+    db.session.commit()
+    sweep_exam(reload(exam))
+    check("with no inactivity limit, silence submits nothing",
+          reload(attempt).status == ATTEMPT_IN_PROGRESS)
+
+    # ---- "only record" mode never submits ------------------------------- #
+    exam, student = fresh("AWY-0007", exit_mode="off", idle_seconds=10)
+    with signed_in("AWY-0007", "AWY-0007") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event", data={"kind": "hidden"})
+    attempt = reload(attempt)
+    attempt.away_since = utcnow() - timedelta(minutes=10)
+    attempt.last_activity_at = utcnow() - timedelta(minutes=10)
+    db.session.commit()
+    check("‘only record’ mode submits nobody, however long they are gone",
+          sweep_exam(reload(exam)) == 0)
+
+    # ---- a closed exam is not swept ------------------------------------- #
+    exam, student = fresh("AWY-0008")
+    with signed_in("AWY-0008", "AWY-0008") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+    exam = reload(exam)
+    exam.is_open = False
+    attempt = reload(attempt)
+    attempt.away_since = utcnow() - timedelta(minutes=5)
+    db.session.commit()
+    check("a closed exam sweeps nobody", sweep_exam(reload(exam)) == 0)
+
+    # ---- another student's poll is enough to trigger it ----------------- #
+    exam, first = fresh("AWY-0009")
+    second = make_student("AWY-0010")
+    db.session.add(Enrollment(course_id=course.id, student_id=second.id))
+    db.session.commit()
+    with signed_in("AWY-0009", "AWY-0009") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+    with signed_in("AWY-0010", "AWY-0010") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "AWY"})
+    gone = Attempt.query.filter_by(exam_id=exam.id, student_id=first.id).first()
+    watching = Attempt.query.filter_by(exam_id=exam.id,
+                                       student_id=second.id).first()
+    gone.away_since = utcnow() - timedelta(seconds=30)
+    db.session.commit()
+    with signed_in("AWY-0010", "AWY-0010") as client:
+        client.get(f"/take/attempt/{watching.id}/status.json?active=1")
+    check("one student's clock check ends another's abandoned attempt",
+          reload(gone).status == ATTEMPT_SUBMITTED, reload(gone).status)
+    check("and leaves the student still working alone",
+          reload(watching).status == ATTEMPT_IN_PROGRESS)
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2578,6 +2781,7 @@ def main():
         ("Printable records", test_printable_records),
         ("The class record on paper", test_class_record),
         ("The examination paper", test_examination_paper),
+        ("Leaving the exam ends it", test_away_and_idle_submit),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

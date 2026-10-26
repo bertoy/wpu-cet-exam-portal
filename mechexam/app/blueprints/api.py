@@ -39,6 +39,12 @@ def exam_monitor(exam_id: int):
     exam = Exam.query.get_or_404(exam_id)
     require_course(exam.course_id)
 
+    # The instructor watching the monitor is usually the busiest poller in the
+    # room, so this is the most reliable place for the sweep to run.
+    from .taking import sweep_exam
+
+    sweep_exam(exam)
+
     roster = exam.course.roster(exam.section_id)
     attempts = {a.student_id: a for a in Attempt.query.filter_by(exam_id=exam.id).all()}
 
@@ -89,10 +95,16 @@ def expire_check(exam_id: int):
     the monitor page -- the first client to notice triggers the close.
     """
     exam = Exam.query.get_or_404(exam_id)
-    if not exam.is_expired:
-        return jsonify({"expired": False, "seconds_remaining": exam.seconds_remaining})
 
-    from .taking import _expire
+    from .taking import _expire, sweep_exam
+
+    if not exam.is_expired:
+        swept = sweep_exam(exam)
+        return jsonify({
+            "expired": False,
+            "seconds_remaining": exam.seconds_remaining,
+            "swept": swept,
+        })
 
     _expire(exam)
     return jsonify({"expired": True})

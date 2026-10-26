@@ -40,6 +40,7 @@ from ..models import (
     ATTEMPT_SUBMITTED,
     Enrollment,
     Exam,
+    EXIT_OFF,
     EXIT_STRICT,
     IntegrityEvent,
     Q_MATCHING,
@@ -203,6 +204,85 @@ def _expire(exam: Exam) -> None:
     db.session.commit()
 
 
+def _submit_now(attempt: Attempt, reason: str, detail: str, questions) -> None:
+    """End one attempt where it stands."""
+    attempt.status = ATTEMPT_SUBMITTED
+    attempt.submitted_at = utcnow()
+    attempt.auto_submitted = True
+    attempt.submit_reason = reason
+    attempt.away_since = None
+    mark_attempt(attempt, questions)
+    db.session.add(
+        IntegrityEvent(attempt_id=attempt.id, kind="auto_submit", detail=detail)
+    )
+
+
+def sweep_exam(exam: Exam) -> int:
+    """Submit the attempts that have run out of rope, and say how many.
+
+    This is the half that makes leaving an exam actually end it. The client
+    decides nothing while it is away -- it may not be running at all, because
+    a phone that is switched off or a browser that the system has frozen sends
+    nothing and runs no timers. So the server keeps the clock instead: the
+    client reports the moment the exam left the screen, and from then on this
+    sweep can end the attempt whether or not that device is ever heard from
+    again.
+
+    It is called from the pages that are already being polled -- the
+    instructor's monitor, and every other student's clock check -- so no
+    background job is needed on a host that offers none.
+    """
+    if not exam.is_open or exam.exit_mode == EXIT_OFF:
+        return 0
+
+    now = utcnow()
+    allowance = max(5, exam.lock_grace_seconds or 90)
+    idle_limit = exam.idle_seconds or 0
+    questions = None
+    submitted = 0
+
+    for attempt in Attempt.query.filter_by(
+        exam_id=exam.id, status=ATTEMPT_IN_PROGRESS
+    ).all():
+        reason = detail = ""
+
+        if attempt.away_since is not None:
+            away = int((now - attempt.away_since).total_seconds())
+            if away >= allowance:
+                reason = "exit:away"
+                detail = (
+                    f"away from the exam for {away}s, over the "
+                    f"{allowance}s allowed"
+                )
+
+        if not reason and idle_limit:
+            since = attempt.last_activity_at or attempt.started_at
+            if since is not None:
+                idle = int((now - since).total_seconds())
+                if idle >= idle_limit:
+                    reason = "idle"
+                    detail = (
+                        f"no activity for {idle}s, over the {idle_limit}s "
+                        f"allowed"
+                    )
+
+        if not reason:
+            continue
+
+        if questions is None:
+            questions = list(exam.questions)
+        _submit_now(attempt, reason, detail, questions)
+        submitted += 1
+
+    if submitted:
+        db.session.commit()
+        from .exams import _sync_to_gradebook
+
+        _sync_to_gradebook(exam)
+        db.session.commit()
+    return submitted
+
+
 # --------------------------------------------------------------------------- #
 # Sitting
 # --------------------------------------------------------------------------- #
@@ -236,7 +316,11 @@ def sit(attempt_id: int):
     saved = _saved_answers(attempt)
     layouts = {q.id: _layout(q, attempt.seed, exam) for q in questions}
 
+    # Opening the exam page is unambiguously being present, so any absence
+    # the server was timing ends here.
     attempt.last_seen_at = utcnow()
+    attempt.last_activity_at = utcnow()
+    attempt.away_since = None
     db.session.commit()
 
     remaining = exam.seconds_remaining + (attempt.extra_seconds or 0)
@@ -387,6 +471,12 @@ def autosave(attempt_id: int):
 
     _store_answers(attempt, request.form)
     attempt.last_seen_at = utcnow()
+    # A save sent as the page goes away is a farewell, not a sign of life: it
+    # arrives just after the event that reported the absence, and clearing the
+    # clock here would cancel the absence it was sent during.
+    if not request.form.get("leaving"):
+        attempt.last_activity_at = utcnow()
+        attempt.away_since = None
     db.session.commit()
 
     return jsonify(
@@ -428,6 +518,16 @@ def event(attempt_id: int):
     db.session.add(
         IntegrityEvent(attempt_id=attempt.id, kind=kind, detail=detail)
     )
+
+    # The server keeps its own clock on an absence, because the client may
+    # stop running the moment it starts: a locked phone fires no timers.
+    if kind in ("hidden", "screen_sleep"):
+        if attempt.away_since is None:
+            attempt.away_since = utcnow()
+    elif kind in ("interruption", "return", "absence_forgiven", "visible",
+                  "resume"):
+        attempt.away_since = None
+        attempt.last_activity_at = utcnow()
 
     action = "none"
     if kind == "exit_confirmed" and exam.exit_mode == EXIT_STRICT:
@@ -524,9 +624,24 @@ def review(attempt_id: int):
 @bp.route("/attempt/<int:attempt_id>/status.json")
 @student_required
 def status(attempt_id: int):
-    """Polled by the exam page so a class-wide close takes effect at once."""
+    """Polled by the exam page so a class-wide close takes effect at once.
+
+    It also reports whether this student has touched anything since the last
+    poll, and runs the sweep, so an absence is acted on even when the only
+    device still running is somebody else's.
+    """
     attempt = _require_attempt(attempt_id)
     exam = attempt.exam
+
+    if request.args.get("active") == "1":
+        attempt.last_activity_at = utcnow()
+        attempt.away_since = None
+    attempt.last_seen_at = utcnow()
+    db.session.commit()
+
+    sweep_exam(exam)
+    db.session.refresh(attempt)
+
     return jsonify(
         {
             "open": bool(exam.is_open and not exam.is_expired),

@@ -47,20 +47,17 @@
       {% if exam.exit_mode == 'strict' %}
       <li style="color:var(--red-600)">
         <strong>Leaving the exam for more than
-        {{ exam.lock_grace_seconds }} seconds submits it.</strong>
-        Nothing is submitted while you are away, and nothing happens at all
-        until you come back — so if your screen simply locks, pick the phone
-        up and carry on.
-        {% if exam.exit_allowance %}
-          You will be warned the first
-          {{ 'time' if exam.exit_allowance == 1 else exam.exit_allowance ~ ' times' }}.
+        {{ exam.lock_grace_seconds }} second{{ '' if exam.lock_grace_seconds == 1 else 's' }}
+        submits it.</strong> Switching to another app, opening another tab or
+        putting the phone down all count. It is submitted whether or not your
+        phone is still on, so coming back later will not undo it.
+        {% if exam.lock_grace_seconds < 60 %}
+          <strong>Your screen locking on its own counts too</strong>, so keep
+          the screen awake.
+        {% else %}
+          Come back inside {{ exam.lock_grace_seconds }} seconds and it is
+          recorded as an interruption, nothing more.
         {% endif %}
-      </li>
-      <li>
-        A screen that goes dark on its own, an incoming call or a notification
-        does <strong>not</strong> end your exam. Come back inside
-        {{ exam.lock_grace_seconds }} seconds and it is recorded as an
-        interruption, nothing more.
       </li>
       {% elif exam.exit_mode == 'grace' %}
       <li style="color:var(--amber-600)">
@@ -73,6 +70,13 @@
       <li>
         Leaving the exam is recorded for your instructor to see, but nothing is
         submitted automatically.
+      </li>
+      {% endif %}
+      {% if exam.idle_seconds %}
+      <li style="color:var(--amber-600)">
+        <strong>Your exam is submitted after {{ exam.idle_seconds }} seconds
+        with no activity.</strong> Typing, tapping and scrolling all count —
+        but simply reading does not, so touch the screen as you work.
       </li>
       {% endif %}
       {% if exam.block_paste %}<li>Pasting into an answer is blocked.</li>{% endif %}

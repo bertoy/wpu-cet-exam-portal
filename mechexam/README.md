@@ -186,15 +186,26 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   on screen is submitted.
 * **Answers are saved as they are typed.** A flat battery or a dropped
   connection costs a student nothing.
-* **A locked phone does not end an exam.** A browser cannot tell a locked
-  screen from a student opening another app — both hide the page and both take
-  the focus away — so the exam does not guess. It measures how long the
-  student was gone and decides when they come back, never while they are away.
-  An absence shorter than the exam's allowance (90 seconds by default) is
-  recorded as an interruption and never penalised; longer ones are forgiven a
-  set number of times with a warning on screen; only after that does strict
-  mode submit, and it says why. An earlier build submitted on the browser's
-  `blur` event, which is exactly what locking a phone produces.
+* **Leaving the exam ends it, and the server is what ends it.** The moment
+  the exam leaves a student's screen the client says so, and from then on the
+  server keeps the clock. Once the absence passes the exam's allowance the
+  attempt is submitted — whether or not that device is ever heard from again,
+  so a phone switched off mid-exam does not escape. The sweep runs on the
+  pages already being polled: the instructor's monitor, and every other
+  student's clock check. (If literally everyone leaves at once there is
+  nobody left to poll, and those attempts are submitted when the exam's own
+  time runs out.)
+* **The allowance goes down to 5 seconds**, and the trade-off is real and
+  stated in the editor: a browser cannot tell a locked screen from a switch to
+  another app. Below about 60 seconds a screen that times out on its own, an
+  incoming call or a notification will end the exam too. 90 seconds is the
+  default and is safe for unsupervised sittings; a short allowance belongs in
+  a room you are watching. The student is told which regime applies before
+  they start.
+* **An inactivity limit**, off by default. When it is set, an exam with no
+  typing, tapping or scrolling for that long is submitted. Reading is not
+  activity, so a student thinking about a long problem can be caught by it —
+  which is why it is off unless you turn it on.
 * **Exam traffic is tunable.** Administration → Year & semester sets how
   often answers are saved (at most every N seconds — answers still land
   shortly after a student stops typing, so nobody can lose more than N

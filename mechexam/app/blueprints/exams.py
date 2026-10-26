@@ -140,10 +140,13 @@ def create():
             exit_mode=request.form.get("exit_mode") or EXIT_STRICT,
             exit_grace_seconds=request.form.get("exit_grace_seconds", type=int) or 180,
             lock_grace_seconds=_bounded(
-                request.form.get("lock_grace_seconds", type=int), 90, 15, 600
+                request.form.get("lock_grace_seconds", type=int), 90, 5, 600
             ),
             exit_allowance=_bounded(
                 request.form.get("exit_allowance", type=int), 1, 0, 10
+            ),
+            idle_seconds=_bounded(
+                request.form.get("idle_seconds", type=int), 0, 0, 3600
             ),
             block_paste=bool(request.form.get("block_paste")),
             allow_calculator=bool(request.form.get("allow_calculator")),
@@ -293,9 +296,10 @@ def update_settings(exam_id: int):
     exam.exit_mode = form.get("exit_mode") or EXIT_STRICT
     exam.exit_grace_seconds = form.get("exit_grace_seconds", type=int) or 180
     exam.lock_grace_seconds = _bounded(
-        form.get("lock_grace_seconds", type=int), 90, 15, 600
+        form.get("lock_grace_seconds", type=int), 90, 5, 600
     )
     exam.exit_allowance = _bounded(form.get("exit_allowance", type=int), 1, 0, 10)
+    exam.idle_seconds = _bounded(form.get("idle_seconds", type=int), 0, 0, 3600)
     exam.block_paste = bool(form.get("block_paste"))
     exam.allow_calculator = bool(form.get("allow_calculator"))
     exam.allow_backtrack = bool(form.get("allow_backtrack"))
@@ -357,6 +361,7 @@ def duplicate(exam_id: int):
         exit_grace_seconds=exam.exit_grace_seconds,
         lock_grace_seconds=exam.lock_grace_seconds,
         exit_allowance=exam.exit_allowance,
+        idle_seconds=exam.idle_seconds,
         block_paste=exam.block_paste,
         allow_calculator=exam.allow_calculator,
         allow_backtrack=exam.allow_backtrack,

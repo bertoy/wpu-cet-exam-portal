@@ -48,6 +48,7 @@
     graceSeconds: parseInt(root.getAttribute("data-grace-seconds") || "180", 10),
     lockGraceSeconds: parseInt(root.getAttribute("data-lock-grace-seconds") || "90", 10),
     exitAllowance: parseInt(root.getAttribute("data-exit-allowance") || "1", 10),
+    idleSeconds: parseInt(root.getAttribute("data-idle-seconds") || "0", 10),
     autosaveSeconds: parseInt(root.getAttribute("data-autosave-seconds") || "20", 10),
     clockPollSeconds: parseInt(root.getAttribute("data-clock-poll-seconds") || "60", 10),
     blockPaste: root.getAttribute("data-block-paste") === "1",
@@ -70,6 +71,9 @@
   var graceLeft = 0;
   var hiddenAt = 0;          // when the document was last hidden
   var absences = 0;          // confirmed departures so far
+  var touchedSincePoll = false;   // any real input since the last status poll
+  var lastTouchAt = Date.now();   // when the student last did anything
+  var awayTimer = null;           // fires if an absence outlasts the allowance
 
   /* ---- helpers ---------------------------------------------------------- */
 
@@ -167,11 +171,17 @@
   }
 
   /* A beacon survives the page being torn down, unlike XHR. */
-  function saveWithBeacon() {
+  /* A farewell save, sent as the page goes away. It is marked as such: a
+     beacon is asynchronous and arrives a moment AFTER the event reporting
+     that the exam left the screen, so without this flag the save would land
+     second and tell the server the student was back -- which cancelled the
+     very absence it was sent during. */
+  function saveWithBeacon(leaving) {
     if (finished || !config.autosaveUrl) return;
     try {
       if (navigator.sendBeacon) {
-        var blob = new Blob([serialise()], {
+        var body = serialise() + (leaving ? "&leaving=1" : "");
+        var blob = new Blob([body], {
           type: "application/x-www-form-urlencoded;charset=UTF-8"
         });
         navigator.sendBeacon(config.autosaveUrl, blob);
@@ -264,7 +274,13 @@
   function syncStatus() {
     if (finished || !config.statusUrl) return;
     var request = new XMLHttpRequest();
-    request.open("GET", config.statusUrl, true);
+    // Tell the server whether this student has actually done anything since
+    // the last poll, which is what an inactivity limit is measured against.
+    var url = config.statusUrl +
+              (config.statusUrl.indexOf("?") === -1 ? "?" : "&") +
+              "active=" + (touchedSincePoll ? "1" : "0");
+    touchedSincePoll = false;
+    request.open("GET", url, true);
     request.onload = function () {
       if (request.status !== 200) return;
       var payload;
@@ -354,6 +370,26 @@
     post(config.eventUrl, body, onDone);
   }
 
+  function noteActivity() {
+    touchedSincePoll = true;
+    lastTouchAt = Date.now();
+  }
+
+  /* The inactivity limit, when one is set. The server applies it too, from
+     what the status poll reports, so a frozen page cannot sit it out. */
+  function checkIdle() {
+    if (finished || !config.idleSeconds) return;
+    var idle = Math.round((Date.now() - lastTouchAt) / 1000);
+    if (idle < config.idleSeconds) return;
+    finished = true;
+    showOverlay(
+      "Your exam has been submitted",
+      "There was no activity for " + idle + " seconds, which ends the exam.",
+      null
+    );
+    doSubmit("idle");
+  }
+
   /* Did the window keep focus while hidden?  If so it was certainly the
      screen going dark, because nothing came in front of the exam.  The
      converse does NOT hold: a locked phone also loses focus, so a false here
@@ -366,21 +402,34 @@
     }
   }
 
-  /* Hiding decides nothing.  It saves the work, notes the time, and waits. */
+  /* Hiding saves the work and tells the server, which from that moment keeps
+     its own clock on the absence. This page may stop running entirely -- a
+     locked phone fires no timers -- so the server, not this timer, is what
+     actually ends the exam. The timer below is only there to end it promptly
+     on a device that does keep running. */
   function onHidden() {
     if (finished) return;
 
-    saveWithBeacon();
+    saveWithBeacon(true);
     hiddenAt = Date.now();
 
-    if (keptFocus()) {
-      report("screen_sleep", "display turned off, window kept focus");
-      return;
-    }
+    report(
+      keptFocus() ? "screen_sleep" : "hidden",
+      "exam left the screen — the server is timing this absence"
+    );
 
-    // Could be a lock, could be another app.  Unknowable here, so the only
-    // honest record is that the exam stopped being visible.
-    report("hidden", "exam no longer on screen — waiting to see how long");
+    if (config.exitMode === "off") return;
+
+    if (awayTimer) clearTimeout(awayTimer);
+    awayTimer = setTimeout(function () {
+      if (finished || !document.hidden) return;
+      // Still away past the allowance. Submit from here if this device is
+      // still alive; if it is not, the server has already done it.
+      finished = true;
+      saveWithBeacon(true);
+      report("exit_confirmed", "still away past the allowance");
+      doSubmit("exit_away");
+    }, Math.max(5, config.lockGraceSeconds) * 1000);
   }
 
   /* Coming back is where the decision is actually made, because by then the
@@ -388,8 +437,11 @@
   function onVisible() {
     if (finished) return;
 
+    if (awayTimer) { clearTimeout(awayTimer); awayTimer = null; }
+
     var awaySeconds = hiddenAt ? Math.round((Date.now() - hiddenAt) / 1000) : 0;
     hiddenAt = 0;
+    noteActivity();
 
     if (graceTimer) {
       clearInterval(graceTimer);
@@ -701,6 +753,14 @@
       if (pendingSave) saveNow();
     }, Math.max(5, config.autosaveSeconds) * 1000);
 
+    var activityEvents = ["keydown", "pointerdown", "touchstart", "wheel",
+                          "scroll", "input", "change"];
+    for (var a = 0; a < activityEvents.length; a++) {
+      document.addEventListener(activityEvents[a], noteActivity,
+                                { passive: true, capture: true });
+    }
+    if (config.idleSeconds) setInterval(checkIdle, 2000);
+
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) onHidden();
       else onVisible();
@@ -715,7 +775,7 @@
       if (config.exitMode !== "off") report("blur", "window lost focus (not acted on)");
     });
 
-    window.addEventListener("pagehide", saveWithBeacon);
+    window.addEventListener("pagehide", function () { saveWithBeacon(true); });
     window.addEventListener("beforeunload", warnOnLeave);
 
     if (config.blockPaste) {

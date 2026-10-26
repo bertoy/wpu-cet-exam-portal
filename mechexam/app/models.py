@@ -706,6 +706,11 @@ class Exam(db.Model):
     lock_grace_seconds = db.Column(db.Integer, nullable=False, default=90)
     # How many such absences are forgiven outright before the exit mode acts.
     exit_allowance = db.Column(db.Integer, nullable=False, default=1)
+    # Submit after this long with no typing, tapping or scrolling. Zero is
+    # off, and off is the default: a student reading a long problem is not
+    # idle, and an exam that ends while somebody is thinking is worse than one
+    # that ends a minute late.
+    idle_seconds = db.Column(db.Integer, nullable=False, default=0)
     block_paste = db.Column(db.Boolean, nullable=False, default=True)
     allow_calculator = db.Column(db.Boolean, nullable=False, default=True)
     allow_backtrack = db.Column(db.Boolean, nullable=False, default=True)
@@ -925,6 +930,17 @@ class Attempt(db.Model):
     override_score = db.Column(db.Float)
     override_note = db.Column(db.String(255), default="")
 
+    # When the exam left this student's screen, if it is still away. The
+    # client reports the moment it happens; the server decides what it means.
+    # Kept on the attempt rather than inferred from the event log so that a
+    # device which goes silent -- a phone switched off mid-exam -- can still
+    # be acted on, since the server knows when it last saw them.
+    away_since = db.Column(db.DateTime)
+    # The last time this student actually did something: typed, tapped or
+    # scrolled. Not the same as last_seen_at, which a background poll updates
+    # on its own.
+    last_activity_at = db.Column(db.DateTime)
+
     seed = db.Column(db.Integer, default=0)
     question_order_raw = db.Column("question_order", db.Text)
     reopen_count = db.Column(db.Integer, default=0)
@@ -1014,6 +1030,8 @@ class IntegrityEvent(db.Model):
         "absence_forgiven": "Away a while — forgiven with a warning",
         "exit": "Left the exam",
         "exit_confirmed": "Left the exam (beyond the allowance)",
+        "exit_away": "Submitted while away from the exam",
+        "idle": "Submitted after no activity",
         "return": "Returned to the exam",
         "paste": "Paste attempt blocked",
         "copy": "Copy attempt",
