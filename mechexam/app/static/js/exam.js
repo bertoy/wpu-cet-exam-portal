@@ -310,6 +310,7 @@
   /* ---- submitting ------------------------------------------------------- */
 
   function doSubmit(reason) {
+    releaseScreen();
     if (!form) return;
     var auto = form.querySelector('[name="auto"]');
     var why = form.querySelector('[name="reason"]');
@@ -369,6 +370,41 @@
                "&detail=" + encodeURIComponent(detail || "") +
                "&" + serialise();
     post(config.eventUrl, body, onDone);
+  }
+
+  /* ---- keeping the screen awake ---------------------------------------- */
+
+  /* A page cannot be told that the screen is dimming, and there is no event
+     for it: by the time anything is observable the screen has already gone
+     and visibilitychange has fired. So rather than react to the dimming, the
+     exam asks the system not to dim at all.
+
+     This matters more than it sounds. With a short absence allowance a phone
+     that sleeps on its own ends the exam, and a student reading a long
+     problem without touching the screen is exactly who that happens to. The
+     lock is dropped on submit and re-taken whenever the page comes back,
+     because the system releases it the moment the page is hidden. */
+
+  var wakeLock = null;
+
+  function holdScreenAwake() {
+    if (finished || !("wakeLock" in navigator)) return;
+    if (document.visibilityState !== "visible") return;
+    try {
+      navigator.wakeLock.request("screen").then(function (lock) {
+        wakeLock = lock;
+        lock.addEventListener("release", function () { wakeLock = null; });
+      }).catch(function () {
+        // Refused -- low battery, an unsupported build, or no user gesture
+        // yet. The exam works regardless; the screen simply behaves normally.
+      });
+    } catch (e) { /* older browsers */ }
+  }
+
+  function releaseScreen() {
+    if (!wakeLock) return;
+    try { wakeLock.release(); } catch (e) { /* already gone */ }
+    wakeLock = null;
   }
 
   /* ---- what can actually be done about screen capture ------------------ */
@@ -819,11 +855,14 @@
 
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) { blankPaper(true); onHidden(); }
-      else { blankPaper(false); onVisible(); }
+      else { blankPaper(false); holdScreenAwake(); onVisible(); }
     });
 
     window.addEventListener("blur", function () { blankPaper(true); });
-    window.addEventListener("focus", function () { blankPaper(false); });
+    window.addEventListener("focus", function () {
+      blankPaper(false);
+      holdScreenAwake();
+    });
     // A tap anywhere brings it back, since a phone does not always hand the
     // focus back on its own after an overlay closes.
     document.addEventListener("pointerdown", function () { blankPaper(false); });
@@ -838,6 +877,9 @@
     });
 
     guardWatermark();
+    holdScreenAwake();
+    // The first gesture is often what a browser waits for before granting it.
+    document.addEventListener("pointerdown", holdScreenAwake, { once: true });
 
     window.addEventListener("blur", function () {
       // Never acted on. A phone locking, a notification, a second window and

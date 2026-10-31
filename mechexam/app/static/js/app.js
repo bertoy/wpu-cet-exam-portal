@@ -488,6 +488,22 @@
     show();
   }
 
+  /* The "this machine is on" buttons on the network page. */
+  function initNetworkFill() {
+    var box = document.getElementById("allowed_networks");
+    if (!box) return;
+    var buttons = document.querySelectorAll("[data-fill-networks]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener("click", function (e) {
+        var value = e.currentTarget.getAttribute("data-value");
+        var lines = box.value.split("\n").map(function (l) { return l.trim(); })
+                             .filter(Boolean);
+        if (lines.indexOf(value) === -1) lines.push(value);
+        box.value = lines.join("\n");
+      });
+    }
+  }
+
   function boot() {
     initSidebar();
     initClock();
@@ -501,6 +517,7 @@
     initQuestionTypes();
     initDirtyGuard();
     initGradeShares();
+    initNetworkFill();
     initFlashes();
     initServiceWorker();
     initInstallPrompt();

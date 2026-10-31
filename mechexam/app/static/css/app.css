@@ -1749,3 +1749,14 @@ body.exam-running .exam-bar { position: relative; z-index: 41; }
 .exam-blanket p { color: rgba(255, 255, 255, 0.82); margin: 0; }
 
 @media print { .exam-watermark, .exam-blanket { display: none !important; } }
+
+/* The local addresses a student types into their phone: big enough to read
+   out across a room. */
+.address-list { list-style: none; margin: 0 0 0.6rem; padding: 0; }
+.address-list li {
+  background: var(--line-soft); border-radius: var(--radius);
+  padding: 0.4rem 0.7rem; margin-bottom: 0.35rem;
+  font-size: 1.05rem; word-break: break-all;
+}
+.roomsteps { margin: 0.6rem 0 0.9rem; padding-left: 1.3rem; font-size: 0.9rem; }
+.roomsteps > li { margin-bottom: 0.6rem; }

@@ -2581,6 +2581,159 @@ def test_screen_capture_measures():
 
 
 # --------------------------------------------------------------------------- #
+# 14m. Taking the exam on the room's own network
+# --------------------------------------------------------------------------- #
+
+def test_network_restriction():
+    from app.network import address_allowed, parse_networks, describe
+
+    # ---- reading what an instructor would actually type ------------------ #
+    for allow, who, want in [
+        ("192.168.1.0/24", "192.168.1.50", True),
+        ("192.168.1.0/24", "192.168.2.50", False),
+        ("192.168.1.", "192.168.1.200", True),      # the shorthand people use
+        ("192.168.1.", "192.168.9.200", False),
+        ("10.0.", "10.0.33.7", True),
+        ("192.168.1.50", "192.168.1.50", True),     # a single host
+        ("192.168.1.50", "192.168.1.51", False),
+        ("192.168.1.0/24, 10.0.0.0/8", "10.4.4.4", True),
+        ("", "203.0.113.9", True),                  # blank allows anywhere
+        ("192.168.1.0/24", "", False),              # no address is not inside
+        ("192.168.1.0/24", "not-an-ip", False),
+    ]:
+        check(f"‘{allow or 'blank'}’ {'admits' if want else 'refuses'} {who or 'no address'}",
+              address_allowed(who, allow) is want,
+              f"{allow!r} / {who!r}")
+
+    readable, unreadable = parse_networks("192.168.1.0/24\nrubbish\n# a note")
+    check("an unreadable line is reported, not silently dropped",
+          len(readable) == 1 and unreadable == ["rubbish"], str(unreadable))
+    check("and it is named in the description",
+          "rubbish" in describe("192.168.1.0/24\nrubbish"))
+
+    # ---- a student off the network cannot start -------------------------- #
+    teacher = make_instructor("net-teacher")
+    course = make_course("TEST-NET", teacher)
+    student = make_student("2026-7001")
+    db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+
+    exam = Exam(course_id=course.id, title="Room only", duration_minutes=60,
+                access_code="NET", school_year=course.school_year,
+                semester=course.semester, allowed_networks="192.168.50.0/24")
+    db.session.add(exam)
+    db.session.flush()
+    db.session.add(Question(exam_id=exam.id, qtype=Q_NUMERIC, text="2+2?",
+                            answer="4", points=1, order_index=1))
+    exam.is_open = True
+    exam.opened_at = utcnow()
+    exam.closes_at = exam.opened_at + timedelta(minutes=60)
+    db.session.commit()
+
+    with signed_in("2026-7001", "2026-7001") as client:
+        response = client.post(f"/take/{exam.id}/start",
+                               data={"access_code": "NET"},
+                               environ_base={"REMOTE_ADDR": "203.0.113.77"},
+                               follow_redirects=True)
+        body = response.get_data(as_text=True)
+        check("a student on mobile data is turned away",
+              "only be taken on the room" in body, "no refusal shown")
+        check("they are told the address they came from",
+              "203.0.113.77" in body)
+
+    check("and no attempt was created for them",
+          Attempt.query.filter_by(exam_id=exam.id,
+                                  student_id=student.id).first() is None,
+          "a refused student must not use up their attempt")
+
+    # ---- on the room's network, they get in ------------------------------ #
+    with signed_in("2026-7001", "2026-7001") as client:
+        client.post(f"/take/{exam.id}/start", data={"access_code": "NET"},
+                    environ_base={"REMOTE_ADDR": "192.168.50.23"},
+                    follow_redirects=True)
+    attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                      student_id=student.id).first()
+    check("a student on the room's wifi starts normally", attempt is not None)
+
+    # ---- switching to mobile data mid-exam hides the questions ----------- #
+    with signed_in("2026-7001", "2026-7001") as client:
+        body = client.get(f"/take/attempt/{attempt.id}",
+                          environ_base={"REMOTE_ADDR": "203.0.113.77"},
+                          follow_redirects=True).get_data(as_text=True)
+    check("leaving the network mid-exam hides the questions",
+          "only be taken on the room" in body)
+    check("and it is recorded for the instructor",
+          any(e.kind == "off_network" for e in reload(attempt).events))
+
+    # ---- but their work is never refused --------------------------------- #
+    question = exam.questions[0]
+    with signed_in("2026-7001", "2026-7001") as client:
+        saved = client.post(f"/take/attempt/{attempt.id}/autosave",
+                            data={f"q{question.id}": "4"},
+                            environ_base={"REMOTE_ADDR": "203.0.113.77"})
+        check("saving from off the network still succeeds",
+              saved.status_code == 200, str(saved.status_code))
+
+        submitted = client.post(f"/take/attempt/{attempt.id}/submit",
+                                data={f"q{question.id}": "4"},
+                                environ_base={"REMOTE_ADDR": "203.0.113.77"},
+                                follow_redirects=True)
+        check("and so does submitting",
+              submitted.status_code == 200, str(submitted.status_code))
+
+    attempt = reload(attempt)
+    check("the answer really was kept",
+          any((a.response or "") == "4" for a in attempt.answers),
+          "work must never be lost to a network rule")
+    check("the attempt really was submitted",
+          attempt.status == ATTEMPT_SUBMITTED, attempt.status)
+
+    # ---- with no list, any address is fine -------------------------------- #
+    open_exam = Exam(course_id=course.id, title="Anywhere", duration_minutes=60,
+                     access_code="ANY", school_year=course.school_year,
+                     semester=course.semester, allowed_networks="")
+    db.session.add(open_exam)
+    db.session.flush()
+    db.session.add(Question(exam_id=open_exam.id, qtype=Q_NUMERIC, text="1+1?",
+                            answer="2", points=1, order_index=1))
+    open_exam.is_open = True
+    open_exam.opened_at = utcnow()
+    open_exam.closes_at = open_exam.opened_at + timedelta(minutes=60)
+    other = make_student("2026-7002")
+    db.session.add(Enrollment(course_id=course.id, student_id=other.id))
+    db.session.commit()
+
+    with signed_in("2026-7002", "2026-7002") as client:
+        client.post(f"/take/{open_exam.id}/start", data={"access_code": "ANY"},
+                    environ_base={"REMOTE_ADDR": "203.0.113.77"},
+                    follow_redirects=True)
+    check("an exam with no list is reachable from anywhere",
+          Attempt.query.filter_by(exam_id=open_exam.id,
+                                  student_id=other.id).first() is not None)
+
+    # ---- the instructor's own page ---------------------------------------- #
+    with signed_in("net-teacher", "pw-net-teacher") as client:
+        body = client.get(f"/exams/{exam.id}/network").get_data(as_text=True)
+        check("the network page opens", "Allowed networks" in body)
+        check("it says what the exam currently accepts",
+              "192.168.50.0/24" in body)
+        check("it warns when a proxy makes the whole idea useless",
+              "will not work on this host" in client.get(
+                  f"/exams/{exam.id}/network",
+                  headers={"X-Forwarded-For": "203.0.113.1"}
+              ).get_data(as_text=True))
+
+        client.post(f"/exams/{exam.id}/network",
+                    data={"allowed_networks": "10.10.0.0/16\nnonsense"},
+                    follow_redirects=True)
+        check("a saved list is kept",
+              "10.10.0.0/16" in (reload(exam).allowed_networks or ""))
+        check("and the unreadable part is still stored verbatim rather than "
+              "silently thrown away",
+              "nonsense" in (reload(exam).allowed_networks or ""),
+              "an instructor must be able to see and fix their own typo")
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2885,6 +3038,7 @@ def main():
         ("The examination paper", test_examination_paper),
         ("Leaving the exam ends it", test_away_and_idle_submit),
         ("Screen capture measures", test_screen_capture_measures),
+        ("Local-network restriction", test_network_restriction),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

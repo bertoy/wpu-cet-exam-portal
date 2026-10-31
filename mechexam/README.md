@@ -212,13 +212,35 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   read straight through, hidden from screen readers, and ignore taps. Removing
   them with developer tools is possible — this is a deterrent, not a lock —
   but a casual removal is put back and recorded for the instructor.
+* **The screen is kept awake** for the length of the exam, through the
+  browser's wake lock. There is no way for a page to be told that a screen is
+  dimming — by the time anything is observable the screen has gone — so
+  rather than react to it the exam asks the system not to dim at all. This
+  matters most where the absence allowance is short, since a phone that
+  sleeps on its own is otherwise submitted. Chrome on Android has had it
+  since 2020 and Safari on iOS since 18.4; anywhere else the screen simply
+  behaves normally and nothing else changes.
 * **Hiding the questions when the exam is not in front**, off by default.
   The paper is blanked the moment the window loses focus, so an assistant
   opened over the top has nothing to read. It cannot stop a capture taken in
   the same instant, and on some phones an overlay never takes the focus at
   all, so it is a narrowing rather than a barrier.
 * PrintScreen is recorded where a browser exposes it, which is desktops only
-  and only after the capture has already happened.
+  and only after the capture has already happened. **An on-screen assistant
+  overlay cannot be detected at all** — no browser reports one — so the only
+  defence against it is the blanking above, which catches the overlays that
+  take the focus and misses the ones that do not.
+* **An examination can be restricted to the room's own network.** List the
+  networks it may be sat from (`192.168.1.0/24`, or just `192.168.1.`) and a
+  student reaching it from anywhere else is turned away *before* an attempt
+  is created, so switching to mobile data does not get round the room's wifi.
+  Leaving the network mid-exam hides the questions and is recorded. Saving
+  and submitting are never blocked by this: losing somebody's work to a
+  network rule would be a worse outcome than the lookup it prevents. There is
+  a page per exam showing the address students connect to, the networks this
+  machine is on, and how to set the room up — and it says plainly that the
+  rule is useless behind a proxy, where every student appears to arrive from
+  the same address.
 * **An inactivity limit**, off by default. When it is set, an exam with no
   typing, tapping or scrolling for that long is submitted. Reading is not
   activity, so a student thinking about a long problem can be caught by it —

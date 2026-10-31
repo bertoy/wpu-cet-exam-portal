@@ -357,6 +357,22 @@
         </select>
       </div>
 
+      <div class="field">
+        <label for="allowed_networks">Networks this exam may be taken on</label>
+        <textarea id="allowed_networks" name="allowed_networks" rows="2"
+                  class="mono" spellcheck="false"
+                  placeholder="Leave blank to allow anywhere">{{ exam.allowed_networks or '' }}</textarea>
+        <p class="field-hint">
+          One per line, as <span class="mono">192.168.1.0/24</span> or just
+          <span class="mono">192.168.1.</span> A student reaching the exam
+          from anywhere else is turned away before an attempt is created, so
+          switching to mobile data does not get round the room's wifi.
+          Saving and submitting are never blocked by this — losing somebody's
+          work to a network rule would be worse than the lookup it prevents.
+          <a href="{{ url_for('exams.network_help', exam_id=exam.id) }}">Set this up</a>.
+        </p>
+      </div>
+
       <div class="field-row">
         <div class="field" style="flex:0 0 14rem">
           <label for="lock_grace_seconds">A locked screen is forgiven for (seconds)</label>

@@ -719,6 +719,10 @@ class Exam(db.Model):
     # screen while the exam is not the thing being looked at.
     watermark = db.Column(db.Boolean, nullable=False, default=True)
     hide_when_unfocused = db.Column(db.Boolean, nullable=False, default=False)
+    # Networks this exam may be sat from, one per line. Empty means anywhere.
+    # A router can keep the room off the internet; only the server can stop a
+    # student leaving the room's wifi for mobile data.
+    allowed_networks = db.Column(db.Text, default="")
     allow_calculator = db.Column(db.Boolean, nullable=False, default=True)
     allow_backtrack = db.Column(db.Boolean, nullable=False, default=True)
     one_question_per_page = db.Column(db.Boolean, nullable=False, default=False)
@@ -1041,6 +1045,7 @@ class IntegrityEvent(db.Model):
         "idle": "Submitted after no activity",
         "screenshot": "PrintScreen pressed",
         "watermark": "Watermark tampered with",
+        "off_network": "Reached the exam from outside the allowed network",
         "return": "Returned to the exam",
         "paste": "Paste attempt blocked",
         "copy": "Copy attempt",

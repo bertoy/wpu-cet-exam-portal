@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Network · {{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('exams.edit', exam_id=exam.id) }}">{{ exam.title }}</a><span>/</span>Network
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Running this exam on the room's own network</h1>
+    <p class="page-sub">
+      {{ course.code }} &middot; the strongest thing you can do about a student
+      looking an answer up is to take the internet out of the room.
+    </p>
+  </div>
+</div>
+
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      This page does not configure your wireless router — nothing in a web
+      application can. It tells you the address students connect to, and it
+      sets the one rule the router cannot enforce: that an attempt must
+      <em>come from</em> the room's network, so a student cannot simply switch
+      to mobile data.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Where students connect</h2></div>
+    <div class="card-body">
+      {% if addresses %}
+      <p class="small">
+        This machine is reachable at the addresses below. On the examination
+        wifi, a student opens one of these in their browser.
+      </p>
+      <ul class="address-list">
+        {% for link in links %}
+        <li><span class="mono">{{ link }}</span></li>
+        {% endfor %}
+      </ul>
+      <p class="field-hint">
+        If none of these work from a phone, the laptop's firewall is most
+        likely refusing incoming connections — allow the port, or run the
+        portal with <span class="mono">--host 0.0.0.0</span> so it listens on
+        the wifi rather than on itself alone.
+      </p>
+      {% else %}
+      <p class="small">
+        No network address could be found for this machine, which usually
+        means it is not on a local network at all — a hosted server, for
+        instance. Local-network mode only makes sense when the portal is
+        running on a laptop in the room.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Which networks this exam accepts</h2></div>
+    <div class="card-body">
+      {% if behind_proxy %}
+      <div class="callout callout-warning">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          <p class="mb0">
+            <strong>This will not work on this host.</strong> The request
+            reaching the application has come through a proxy, so every
+            student appears to arrive from the same address
+            (<span class="mono">{{ your_address }}</span>) whatever network
+            they are really on. Setting a list here would either admit
+            everybody or nobody. Use it when you run the portal on a laptop in
+            the room.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      <form method="post">
+        <div class="field">
+          <label for="allowed_networks">Allowed networks</label>
+          <textarea id="allowed_networks" name="allowed_networks" rows="4"
+                    class="mono" spellcheck="false"
+                    placeholder="Leave blank to allow anywhere">{{ exam.allowed_networks or '' }}</textarea>
+          <p class="field-hint">
+            One per line, as <span class="mono">192.168.1.0/24</span> or just
+            <span class="mono">192.168.1.</span> Blank allows anywhere, which
+            is the default.
+          </p>
+        </div>
+
+        {% if suggestions %}
+        <p class="label-like">This machine is on:</p>
+        <div class="button-row mb1">
+          {% for suggestion in suggestions %}
+          <button type="button" class="button button-small" data-fill-networks
+                  data-value="{{ suggestion }}">{{ suggestion }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <p class="small">
+          Now accepting: <strong class="mono">{{ allowed }}</strong>.
+          You are reading this page from
+          <span class="mono">{{ your_address or 'an unknown address' }}</span>.
+        </p>
+        <button type="submit" class="button button-primary">Save</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">Setting up the room</h2></div>
+  <div class="card-body">
+    <p class="small">
+      Three ways to do it, from simplest to best. In all of them the portal
+      runs on your laptop, not on the internet, so the exam keeps working
+      whatever the campus connection does.
+    </p>
+
+    <ol class="roomsteps">
+      <li>
+        <strong>A router with nothing plugged into its internet socket.</strong>
+        Everyone joins it, your laptop runs the portal, and there is no way
+        out to the internet for anybody — including you. The simplest to be
+        sure of, because there is nothing to misconfigure: if the cable is
+        out, the internet is out.
+      </li>
+      <li>
+        <strong>A router with the internet blocked for students only.</strong>
+        Most home routers can reserve an address for your laptop and apply
+        parental controls or an access schedule to every <em>other</em>
+        device. You keep the internet, the room does not. Check it from a
+        student's phone before the exam rather than trusting the setting.
+      </li>
+      <li>
+        <strong>Your phone as the access point, with mobile data off.</strong>
+        Turn on the hotspot, turn mobile data off, and the hotspot becomes a
+        local network with no uplink. Good for a small group and needs no
+        hardware, but a phone hotspot usually caps how many devices may join —
+        often eight or ten, so not a class of sixty.
+      </li>
+    </ol>
+
+    <p class="small">
+      Whichever you choose, fill in the allowed networks above as well. The
+      router stops a phone reaching the internet; only the portal can stop a
+      phone leaving the room's wifi altogether and reaching the exam over
+      mobile data.
+    </p>
+
+    <div class="callout callout-warning">
+      <span class="glyph" aria-hidden="true">&#9888;</span>
+      <div class="grow">
+        <p class="mb0">
+          Two things to know before relying on this. A phone can be a hotspot
+          for other phones, so one student with mobile data can share it with
+          the row — the allowed-networks rule does not see that, because those
+          phones still arrive on a wifi address. And if you run the exam on
+          your laptop, the marks live on your laptop: take a backup from
+          Administration ▸ System check afterwards and before anything else.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

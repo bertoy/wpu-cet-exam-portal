@@ -49,6 +49,7 @@ from ..models import (
     log_action,
     utcnow,
 )
+from ..network import address_allowed, client_address, describe as describe_networks
 from ..security import student_required
 
 bp = Blueprint("taking", __name__)
@@ -140,6 +141,14 @@ def start(exam_id: int):
         _expire(exam)
         flash("The time for that exam has run out.", "error")
         return redirect(url_for("taking.available"))
+
+    # Checked before the attempt is created rather than after, so a student on
+    # mobile data is turned away without using up their one attempt.
+    if _off_network(exam):
+        log_action(current_user, "exam_off_network", "exam", exam.id,
+                   client_address())
+        db.session.commit()
+        return _refuse_network(exam)
 
     if attempt is not None:
         return redirect(url_for("taking.sit", attempt_id=attempt.id))
@@ -287,6 +296,23 @@ def sweep_exam(exam: Exam) -> int:
 # Sitting
 # --------------------------------------------------------------------------- #
 
+def _off_network(exam: Exam) -> bool:
+    """Is this request coming from outside the networks the exam allows?"""
+    return not address_allowed(client_address(), exam.allowed_networks or "")
+
+
+def _refuse_network(exam: Exam):
+    """Turn a student away, saying where they are and where they must be."""
+    flash(
+        "This examination can only be taken on the room's own network. Your "
+        f"device is connecting from {client_address() or 'an unknown address'}, "
+        f"which is not {describe_networks(exam.allowed_networks)}. Turn mobile "
+        "data off, join the examination wifi, and try again.",
+        "error",
+    )
+    return redirect(url_for("taking.available"))
+
+
 def _require_attempt(attempt_id: int) -> Attempt:
     attempt = Attempt.query.get_or_404(attempt_id)
     if attempt.student_id != current_user.id:
@@ -315,6 +341,18 @@ def sit(attempt_id: int):
     questions = _questions_in_order(attempt, exam)
     saved = _saved_answers(attempt)
     layouts = {q.id: _layout(q, attempt.seed, exam) for q in questions}
+
+    # A student who joined on the room's network and then switched to mobile
+    # data is turned away from the questions. Saving and submitting are never
+    # blocked by this, further down: losing somebody's work to a network rule
+    # would be a far worse outcome than the lookup it prevents.
+    if _off_network(exam):
+        db.session.add(IntegrityEvent(
+            attempt_id=attempt.id, kind="off_network",
+            detail=f"reached the exam from {client_address()}",
+        ))
+        db.session.commit()
+        return _refuse_network(exam)
 
     # Opening the exam page is unambiguously being present, so any absence
     # the server was timing ends here.
@@ -470,6 +508,11 @@ def autosave(attempt_id: int):
                         "redirect": url_for("taking.review", attempt_id=attempt.id)}), 409
 
     _store_answers(attempt, request.form)
+    if _off_network(attempt.exam):
+        db.session.add(IntegrityEvent(
+            attempt_id=attempt.id, kind="off_network",
+            detail=f"saved from {client_address()}",
+        ))
     attempt.last_seen_at = utcnow()
     # A save sent as the page goes away is a farewell, not a sign of life: it
     # arrives just after the event that reported the absence, and clearing the

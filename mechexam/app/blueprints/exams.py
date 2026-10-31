@@ -65,6 +65,13 @@ from ..question_io import (
     questions_to_csv,
     template_csv,
 )
+from ..network import (
+    client_address,
+    server_addresses,
+    describe as describe_networks,
+    parse_networks,
+    suggested_networks,
+)
 from ..security import require_course, staff_required, visible_courses
 
 bp = Blueprint("exams", __name__)
@@ -151,6 +158,7 @@ def create():
             block_paste=bool(request.form.get("block_paste")),
             watermark=bool(request.form.get("watermark")),
             hide_when_unfocused=bool(request.form.get("hide_when_unfocused")),
+            allowed_networks=(request.form.get("allowed_networks") or "").strip(),
             allow_calculator=bool(request.form.get("allow_calculator")),
             allow_backtrack=bool(request.form.get("allow_backtrack")),
             one_question_per_page=bool(request.form.get("one_question_per_page")),
@@ -305,6 +313,15 @@ def update_settings(exam_id: int):
     exam.block_paste = bool(form.get("block_paste"))
     exam.watermark = bool(form.get("watermark"))
     exam.hide_when_unfocused = bool(form.get("hide_when_unfocused"))
+    exam.allowed_networks = (form.get("allowed_networks") or "").strip()
+    _, unreadable = parse_networks(exam.allowed_networks)
+    if unreadable:
+        flash(
+            "These could not be read as networks and will be ignored: "
+            + ", ".join(unreadable)
+            + ". Write them like 192.168.1.0/24 or 192.168.1.",
+            "warning",
+        )
     exam.allow_calculator = bool(form.get("allow_calculator"))
     exam.allow_backtrack = bool(form.get("allow_backtrack"))
     exam.one_question_per_page = bool(form.get("one_question_per_page"))
@@ -369,6 +386,7 @@ def duplicate(exam_id: int):
         block_paste=exam.block_paste,
         watermark=exam.watermark,
         hide_when_unfocused=exam.hide_when_unfocused,
+        allowed_networks=exam.allowed_networks,
         allow_calculator=exam.allow_calculator,
         allow_backtrack=exam.allow_backtrack,
         one_question_per_page=exam.one_question_per_page,
@@ -1235,6 +1253,64 @@ def exam_export(exam_id: int):
             "Content-Disposition": f'attachment; filename="{slug}-questions.csv"',
             "Cache-Control": "no-store",
         },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Running the exam on the room's own network
+# --------------------------------------------------------------------------- #
+
+@bp.route("/<int:exam_id>/network", methods=["GET", "POST"])
+@staff_required
+def network_help(exam_id: int):
+    """Where the students connect, and which networks the exam will accept.
+
+    The real protection against a student looking an answer up is a room
+    whose wifi has no way out to the internet. That is the router's job, not
+    this application's, so this page explains it and then does the part the
+    router cannot: refusing an attempt that arrives from somewhere else.
+    """
+    exam = _require_exam(exam_id)
+
+    if request.method == "POST":
+        exam.allowed_networks = (request.form.get("allowed_networks") or "").strip()
+        _, unreadable = parse_networks(exam.allowed_networks)
+        db.session.commit()
+        if unreadable:
+            flash(
+                "Ignored, because they could not be read as networks: "
+                + ", ".join(unreadable),
+                "warning",
+            )
+        else:
+            flash("Saved.", "success")
+        return redirect(url_for("exams.network_help", exam_id=exam.id))
+
+    addresses = server_addresses()
+    port = request.host.split(":")[-1] if ":" in request.host else ""
+    links = [
+        f"http://{address}{(':' + port) if port else ''}/" for address in addresses
+    ]
+
+    # Behind a proxy every student looks like the proxy, and the setting
+    # would either block everyone or nobody. Worth saying rather than
+    # letting an instructor find out during an examination.
+    seen = client_address()
+    behind_proxy = bool(
+        request.headers.get("X-Forwarded-For")
+        or request.headers.get("X-Real-IP")
+    )
+
+    return render_template(
+        "exams/network.html",
+        exam=exam,
+        course=exam.course,
+        addresses=addresses,
+        links=links,
+        suggestions=suggested_networks(),
+        allowed=describe_networks(exam.allowed_networks),
+        your_address=seen,
+        behind_proxy=behind_proxy,
     )
 
 
