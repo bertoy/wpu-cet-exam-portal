@@ -52,6 +52,7 @@
     autosaveSeconds: parseInt(root.getAttribute("data-autosave-seconds") || "20", 10),
     clockPollSeconds: parseInt(root.getAttribute("data-clock-poll-seconds") || "60", 10),
     blockPaste: root.getAttribute("data-block-paste") === "1",
+    hideUnfocused: root.getAttribute("data-hide-unfocused") === "1",
     secondsRemaining: parseInt(root.getAttribute("data-seconds-remaining") || "0", 10)
   };
 
@@ -368,6 +369,61 @@
                "&detail=" + encodeURIComponent(detail || "") +
                "&" + serialise();
     post(config.eventUrl, body, onDone);
+  }
+
+  /* ---- what can actually be done about screen capture ------------------ */
+
+  /* Nothing in a browser can stop a screenshot. These two do the only things
+     that are available: keep the paper off the screen while the exam is not
+     the thing in front, and keep the watermark present so that a capture
+     which does happen names whoever made it. */
+
+  var blanket = null;
+
+  function blankPaper(on) {
+    if (!config.hideUnfocused || finished) return;
+    if (on) {
+      if (blanket) return;
+      blanket = document.createElement("div");
+      blanket.className = "exam-blanket";
+      blanket.setAttribute("data-exam-blanket", "");
+      blanket.innerHTML =
+        '<div class="exam-blanket-inner">' +
+        "<h2>Your exam is hidden</h2>" +
+        "<p>The questions come back when you tap this page. Leaving the exam " +
+        "is recorded either way.</p></div>";
+      document.body.appendChild(blanket);
+      document.body.classList.add("exam-hidden");
+    } else if (blanket) {
+      blanket.parentNode && blanket.parentNode.removeChild(blanket);
+      blanket = null;
+      document.body.classList.remove("exam-hidden");
+    }
+  }
+
+  /* The watermark is put back if it goes missing. Developer tools can always
+     take it away again -- this is a deterrent, not a lock -- but a casual
+     removal does not survive, and the attempt to remove it is recorded. */
+  function guardWatermark() {
+    var mark = document.querySelector("[data-watermark]");
+    if (!mark) return;
+    var clone = mark.cloneNode(true);
+
+    setInterval(function () {
+      if (finished) return;
+      var live = document.querySelector("[data-watermark]");
+      if (!live) {
+        document.body.insertBefore(clone.cloneNode(true), document.body.firstChild);
+        report("watermark", "the watermark was removed and has been restored");
+        return;
+      }
+      var style = window.getComputedStyle(live);
+      if (style.display === "none" || style.visibility === "hidden" ||
+          parseFloat(style.opacity) < 0.3) {
+        live.removeAttribute("style");
+        report("watermark", "the watermark was hidden and has been restored");
+      }
+    }, 4000);
   }
 
   function noteActivity() {
@@ -762,9 +818,26 @@
     if (config.idleSeconds) setInterval(checkIdle, 2000);
 
     document.addEventListener("visibilitychange", function () {
-      if (document.hidden) onHidden();
-      else onVisible();
+      if (document.hidden) { blankPaper(true); onHidden(); }
+      else { blankPaper(false); onVisible(); }
     });
+
+    window.addEventListener("blur", function () { blankPaper(true); });
+    window.addEventListener("focus", function () { blankPaper(false); });
+    // A tap anywhere brings it back, since a phone does not always hand the
+    // focus back on its own after an overlay closes.
+    document.addEventListener("pointerdown", function () { blankPaper(false); });
+
+    // PrintScreen is only visible to a page on a desktop keyboard, and only
+    // after the capture has already been taken. Recording it is all that can
+    // be done, and that is worth doing.
+    document.addEventListener("keyup", function (e) {
+      if (e.key === "PrintScreen" || e.keyCode === 44) {
+        report("screenshot", "PrintScreen was pressed");
+      }
+    });
+
+    guardWatermark();
 
     window.addEventListener("blur", function () {
       // Never acted on. A phone locking, a notification, a second window and

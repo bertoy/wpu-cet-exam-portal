@@ -431,6 +431,25 @@
           <label class="check">
             <input type="checkbox" name="block_paste" value="1" {{ 'checked' if exam.block_paste }}>
             <span>Block pasting</span></label>
+          <label class="check">
+            <input type="checkbox" name="watermark" value="1" {{ 'checked' if exam.watermark }}>
+            <span>Watermark the screen with the student's name
+              <span class="check-note">
+                A screenshot cannot be blocked from a web page — no browser
+                offers any way to stop one. This instead prints the student's
+                name, number and the time faintly across the questions, so a
+                screenshot that circulates says who took it.
+              </span></span></label>
+          <label class="check">
+            <input type="checkbox" name="hide_when_unfocused" value="1"
+                   {{ 'checked' if exam.hide_when_unfocused }}>
+            <span>Hide the questions when the exam is not in front
+              <span class="check-note">
+                Blanks the paper the moment the window loses focus, so an
+                assistant opened over the top of it has nothing to read. It
+                cannot stop a capture taken in the same instant, and on some
+                phones an overlay does not take the focus at all.
+              </span></span></label>
         </div>
         <div>
           <label class="check">

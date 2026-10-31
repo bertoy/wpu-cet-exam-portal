@@ -149,6 +149,8 @@ def create():
                 request.form.get("idle_seconds", type=int), 0, 0, 3600
             ),
             block_paste=bool(request.form.get("block_paste")),
+            watermark=bool(request.form.get("watermark")),
+            hide_when_unfocused=bool(request.form.get("hide_when_unfocused")),
             allow_calculator=bool(request.form.get("allow_calculator")),
             allow_backtrack=bool(request.form.get("allow_backtrack")),
             one_question_per_page=bool(request.form.get("one_question_per_page")),
@@ -301,6 +303,8 @@ def update_settings(exam_id: int):
     exam.exit_allowance = _bounded(form.get("exit_allowance", type=int), 1, 0, 10)
     exam.idle_seconds = _bounded(form.get("idle_seconds", type=int), 0, 0, 3600)
     exam.block_paste = bool(form.get("block_paste"))
+    exam.watermark = bool(form.get("watermark"))
+    exam.hide_when_unfocused = bool(form.get("hide_when_unfocused"))
     exam.allow_calculator = bool(form.get("allow_calculator"))
     exam.allow_backtrack = bool(form.get("allow_backtrack"))
     exam.one_question_per_page = bool(form.get("one_question_per_page"))
@@ -363,6 +367,8 @@ def duplicate(exam_id: int):
         exit_allowance=exam.exit_allowance,
         idle_seconds=exam.idle_seconds,
         block_paste=exam.block_paste,
+        watermark=exam.watermark,
+        hide_when_unfocused=exam.hide_when_unfocused,
         allow_calculator=exam.allow_calculator,
         allow_backtrack=exam.allow_backtrack,
         one_question_per_page=exam.one_question_per_page,

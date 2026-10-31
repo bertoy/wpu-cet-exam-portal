@@ -712,6 +712,13 @@ class Exam(db.Model):
     # that ends a minute late.
     idle_seconds = db.Column(db.Integer, nullable=False, default=0)
     block_paste = db.Column(db.Boolean, nullable=False, default=True)
+    # A screenshot cannot be prevented from a web page -- no browser offers
+    # any way to stop one, and a second phone pointed at the screen defeats
+    # even a native app that can. These two do what is actually available:
+    # make a capture identify whoever took it, and keep the questions off the
+    # screen while the exam is not the thing being looked at.
+    watermark = db.Column(db.Boolean, nullable=False, default=True)
+    hide_when_unfocused = db.Column(db.Boolean, nullable=False, default=False)
     allow_calculator = db.Column(db.Boolean, nullable=False, default=True)
     allow_backtrack = db.Column(db.Boolean, nullable=False, default=True)
     one_question_per_page = db.Column(db.Boolean, nullable=False, default=False)
@@ -1032,6 +1039,8 @@ class IntegrityEvent(db.Model):
         "exit_confirmed": "Left the exam (beyond the allowance)",
         "exit_away": "Submitted while away from the exam",
         "idle": "Submitted after no activity",
+        "screenshot": "PrintScreen pressed",
+        "watermark": "Watermark tampered with",
         "return": "Returned to the exam",
         "paste": "Paste attempt blocked",
         "copy": "Copy attempt",

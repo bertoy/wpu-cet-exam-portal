@@ -2479,6 +2479,108 @@ def test_away_and_idle_submit():
 
 
 # --------------------------------------------------------------------------- #
+# 14l. What can and cannot be done about screen capture
+# --------------------------------------------------------------------------- #
+
+def test_screen_capture_measures():
+    """The watermark names the student; nothing claims to block a capture."""
+    teacher = make_instructor("cap-teacher")
+    course = make_course("TEST-CAP", teacher)
+    student = make_student("2026-6001")
+    student.name = "INOCENCIO, CARYLLE JOY FENIX"
+    db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+
+    exam = Exam(course_id=course.id, title="Watermarked", duration_minutes=60,
+                access_code="CAP", school_year=course.school_year,
+                semester=course.semester, watermark=True,
+                hide_when_unfocused=True, shuffle_questions=False)
+    db.session.add(exam)
+    db.session.flush()
+    db.session.add(Question(exam_id=exam.id, qtype=Q_NUMERIC, text="2+2?",
+                            answer="4", points=1, order_index=1))
+    exam.is_open = True
+    exam.opened_at = utcnow()
+    exam.closes_at = exam.opened_at + timedelta(minutes=60)
+    db.session.commit()
+
+    check("a new exam is watermarked unless you turn it off", exam.watermark)
+    check("hiding when unfocused is off unless you turn it on",
+          not Exam(course_id=course.id, title="x",
+                   duration_minutes=1).hide_when_unfocused)
+
+    with signed_in("2026-6001", "2026-6001") as client:
+        # The start page is where they are told, before they begin.
+        notice = client.get(f"/take/{exam.id}/start").get_data(as_text=True)
+        check("the student is told their name will be on the screen",
+              "identifies you" in notice, "no notice on the start page")
+        check("and that the questions will be hidden when they look away",
+              "hidden whenever the exam is not" in notice)
+
+        body = client.post(f"/take/{exam.id}/start",
+                           data={"access_code": "CAP"},
+                           follow_redirects=True).get_data(as_text=True)
+
+        check("the watermark carries the student's name",
+              "INOCENCIO, CARYLLE JOY FENIX" in body)
+        check("and their student number", "2026-6001" in body)
+        check("it is repeated across the page",
+              body.count("INOCENCIO, CARYLLE JOY FENIX") > 10,
+              str(body.count("INOCENCIO, CARYLLE JOY FENIX")))
+        check("it is hidden from screen readers",
+              'data-watermark aria-hidden="true"' in body)
+        check("the page asks the client to blank when unfocused",
+              'data-hide-unfocused="1"' in body)
+
+    # Another student's paper carries their own name, not the first one's.
+    second = make_student("2026-6002")
+    second.name = "DELA CRUZ, JUAN P."
+    db.session.add(Enrollment(course_id=course.id, student_id=second.id))
+    db.session.commit()
+    with signed_in("2026-6002", "2026-6002") as client:
+        body = client.post(f"/take/{exam.id}/start",
+                           data={"access_code": "CAP"},
+                           follow_redirects=True).get_data(as_text=True)
+    check("each student's paper is marked with their own name",
+          "DELA CRUZ, JUAN P." in body
+          and "INOCENCIO, CARYLLE JOY FENIX" not in body)
+
+    # Switched off, nothing is drawn at all.
+    exam.watermark = False
+    exam.hide_when_unfocused = False
+    db.session.commit()
+    with signed_in("2026-6001", "2026-6001") as client:
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        body = client.get(f"/take/attempt/{attempt.id}").get_data(as_text=True)
+    check("with the watermark off the page carries none",
+          "data-watermark" not in body)
+    check("and the client is told not to blank",
+          'data-hide-unfocused="0"' in body)
+
+    # A pressed PrintScreen is recorded, and changes nothing else: it arrives
+    # after the capture has already been taken, so there is nothing to undo.
+    exam.watermark = True
+    db.session.commit()
+    with signed_in("2026-6001", "2026-6001") as client:
+        attempt = Attempt.query.filter_by(exam_id=exam.id,
+                                          student_id=student.id).first()
+        client.post(f"/take/attempt/{attempt.id}/event",
+                    data={"kind": "screenshot", "detail": "PrintScreen"})
+        client.post(f"/take/attempt/{attempt.id}/event",
+                    data={"kind": "watermark", "detail": "removed"})
+    attempt = reload(attempt)
+    check("a screenshot is recorded for the instructor",
+          any(e.kind == "screenshot" for e in attempt.events))
+    check("tampering with the watermark is recorded too",
+          any(e.kind == "watermark" for e in attempt.events))
+    check("but neither ends the exam",
+          attempt.status == ATTEMPT_IN_PROGRESS, attempt.status)
+    check("and neither starts the away clock",
+          attempt.away_since is None,
+          "a note about a capture must not be read as leaving")
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -2782,6 +2884,7 @@ def main():
         ("The class record on paper", test_class_record),
         ("The examination paper", test_examination_paper),
         ("Leaving the exam ends it", test_away_and_idle_submit),
+        ("Screen capture measures", test_screen_capture_measures),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

@@ -18,9 +18,25 @@
      data-autosave-seconds="{{ autosave_seconds }}"
      data-clock-poll-seconds="{{ clock_poll_seconds }}"
      data-block-paste="{{ '1' if exam.block_paste else '0' }}"
+     data-hide-unfocused="{{ '1' if exam.hide_when_unfocused else '0' }}"
      data-one-per-page="{{ '1' if exam.one_question_per_page else '0' }}"
      data-allow-backtrack="{{ '1' if exam.allow_backtrack else '0' }}"
      data-seconds-remaining="{{ seconds_remaining }}"></div>
+
+{% if exam.watermark %}
+{#
+  A screenshot cannot be prevented from a web page. This makes one traceable
+  instead: the student's own name, number and the time, tiled faintly behind
+  the questions, so any capture that circulates identifies its source. It is
+  aria-hidden and pointer-events: none, so it changes nothing for a screen
+  reader or for tapping an answer.
+#}
+<div class="exam-watermark" data-watermark aria-hidden="true">
+  {% set mark = (current_user.name ~ ' · ' ~ (current_user.student_number or current_user.username)
+                 ~ ' · ' ~ attempt.started_at|dt('%d %b %Y %H:%M')) %}
+  {% for _ in range(40) %}<span>{{ mark }}</span>{% endfor %}
+</div>
+{% endif %}
 
 <div class="exam-bar">
   <div class="grow">
@@ -65,9 +81,16 @@
   <span class="glyph" aria-hidden="true">&#9888;</span>
   <div class="grow">
     <p class="mb0">
-      Stay on this page. Switching to another app or tab submits your exam at
-      once. Your screen going dark by itself is fine — that is recognised and
-      allowed.
+      Stay on this page. If the exam leaves your screen for more than
+      <strong>{{ exam.lock_grace_seconds }} second{{ '' if exam.lock_grace_seconds == 1 else 's' }}</strong>
+      it is submitted for you, and switching off your phone does not stop that.
+      {% if exam.lock_grace_seconds < 60 %}
+        Your screen locking on its own counts too, so keep it awake.
+      {% endif %}
+      {%- if exam.idle_seconds %}
+        It is also submitted after {{ exam.idle_seconds }} seconds with no
+        typing or tapping.
+      {% endif %}
     </p>
   </div>
 </div>

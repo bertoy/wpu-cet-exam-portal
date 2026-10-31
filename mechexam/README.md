@@ -202,6 +202,23 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   default and is safe for unsupervised sittings; a short allowance belongs in
   a room you are watching. The student is told which regime applies before
   they start.
+* **A watermark naming the student**, on by default. No browser offers any
+  way for a page to block a screenshot, a screen recording, or an on-screen
+  assistant reading the page — so the portal does not pretend to. It prints
+  the student's own name, number and start time faintly across the questions
+  instead, so a capture that circulates identifies whoever made it. The marks
+  sit over the paper rather than behind it, deliberately: behind, a capture
+  cropped to one card would carry no mark at all. They are faint enough to
+  read straight through, hidden from screen readers, and ignore taps. Removing
+  them with developer tools is possible — this is a deterrent, not a lock —
+  but a casual removal is put back and recorded for the instructor.
+* **Hiding the questions when the exam is not in front**, off by default.
+  The paper is blanked the moment the window loses focus, so an assistant
+  opened over the top has nothing to read. It cannot stop a capture taken in
+  the same instant, and on some phones an overlay never takes the focus at
+  all, so it is a narrowing rather than a barrier.
+* PrintScreen is recorded where a browser exposes it, which is desktops only
+  and only after the capture has already happened.
 * **An inactivity limit**, off by default. When it is set, an exam with no
   typing, tapping or scrolling for that long is submitted. Reading is not
   activity, so a student thinking about a long problem can be caught by it —

@@ -293,6 +293,8 @@
               <span class="pill pill-info">{{ event.label }}</span>
             {% elif event.kind in ('hidden', 'blur') %}
               <span class="pill">{{ event.label }}</span>
+            {% elif event.kind in ('screenshot', 'watermark') %}
+              <span class="pill pill-fail">{{ event.label }}</span>
             {% elif event.kind in ('absence_forgiven', 'exit', 'exit_confirmed', 'paste') %}
               <span class="pill pill-removal">{{ event.label }}</span>
             {% elif event.kind == 'auto_submit' %}

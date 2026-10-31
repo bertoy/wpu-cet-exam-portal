@@ -79,6 +79,18 @@
         but simply reading does not, so touch the screen as you work.
       </li>
       {% endif %}
+      {% if exam.watermark %}
+      <li>
+        <strong>Your name and student number are printed across the screen</strong>
+        while you work. Anything captured from this exam identifies you.
+      </li>
+      {% endif %}
+      {% if exam.hide_when_unfocused %}
+      <li>
+        The questions are hidden whenever the exam is not the thing in front
+        of you. Tap the page to bring them back.
+      </li>
+      {% endif %}
       {% if exam.block_paste %}<li>Pasting into an answer is blocked.</li>{% endif %}
       {% if exam.allow_calculator %}<li>A calculator and a scratch pad are available on screen.</li>{% endif %}
       {% if exam.shuffle_questions %}<li>The questions are in a different order for each student.</li>{% endif %}

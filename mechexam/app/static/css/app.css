@@ -1702,3 +1702,50 @@ details.tile-paint { position: relative; }
 .xpaper-key-full { font-size: 0.84rem; }
 .xpaper-key-pts { text-align: right; font-size: 0.8rem; white-space: nowrap; }
 .xpaper-scoring { margin: 1.1rem 0 0; font-size: 0.86rem; }
+
+/* ---------- the exam watermark ------------------------------------------ */
+/*
+   No browser lets a page stop a screenshot, so this does not try. It tiles
+   the student's own name, number and start time faintly behind the paper, so
+   a capture that circulates names whoever made it. Removing it with developer
+   tools is possible and would be noticed; the point is the deterrent, not an
+   impregnable overlay.
+
+   It sits behind the content, ignores pointer events entirely, and is hidden
+   from screen readers, so it changes nothing about sitting the exam.
+*/
+.exam-watermark {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden;
+  pointer-events: none; user-select: none;
+  display: flex; flex-wrap: wrap; align-content: flex-start;
+  gap: 3.5rem 2.5rem; padding: 2rem;
+  transform: rotate(-24deg) scale(1.6); transform-origin: center;
+}
+.exam-watermark span {
+  font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+  color: rgba(27, 64, 104, 0.055); letter-spacing: 0.04em;
+}
+:root[data-theme="dark"] .exam-watermark span { color: rgba(255, 255, 255, 0.055); }
+
+/* The marks sit OVER the paper rather than behind it, deliberately. Behind,
+   a capture cropped to one card would carry no mark at all; over the top,
+   any crop that shows a question shows whose screen it came from. They are
+   kept faint enough to read straight through. */
+.exam-watermark { z-index: 40; }
+body.exam-running .exam-bar { position: relative; z-index: 41; }
+
+/* ---------- blanking the paper when the exam is not in front ------------- */
+.exam-hidden [data-question-card],
+.exam-hidden .exam-tools {
+  filter: blur(14px); opacity: 0.25; transition: none;
+}
+.exam-blanket {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--navy-900); color: #fff; text-align: center; padding: 2rem;
+}
+.exam-blanket-inner { max-width: 26rem; }
+.exam-blanket h2 { color: #fff; margin-bottom: 0.4rem; }
+.exam-blanket p { color: rgba(255, 255, 255, 0.82); margin: 0; }
+
+@media print { .exam-watermark, .exam-blanket { display: none !important; } }
