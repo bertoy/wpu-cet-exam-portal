@@ -2734,6 +2734,91 @@ def test_network_restriction():
 
 
 # --------------------------------------------------------------------------- #
+# 14n. A half-finished upgrade says so, and can be put right
+# --------------------------------------------------------------------------- #
+
+def test_incomplete_upgrade():
+    """A missing column must be named and repairable, not a mystery 500."""
+    import sqlalchemy as sa
+
+    from app import faults, migrate
+
+    # ---- the verifier sees a column the models expect and the DB lacks --- #
+    check("a complete schema reports nothing missing",
+          migrate.verify_schema(app) == [], str(migrate.verify_schema(app)))
+
+    dialect = db.engine.name
+    if dialect == "sqlite":
+        db.session.execute(sa.text("ALTER TABLE exam DROP COLUMN allowed_networks"))
+    else:
+        db.session.execute(sa.text("ALTER TABLE exam DROP COLUMN allowed_networks"))
+    db.session.commit()
+    db.session.expire_all()
+
+    missing = migrate.verify_schema(app)
+    check("a dropped column is detected by name",
+          "exam.allowed_networks" in missing, str(missing))
+
+    # ---- and the repair puts it back ------------------------------------- #
+    report = migrate.repair(app)
+    check("the repair adds it back",
+          "exam.allowed_networks" in report["added"], str(report["added"]))
+    check("and nothing is left missing", report["missing"] == [],
+          str(report["missing"]))
+    check("a repaired schema can be queried again",
+          Exam.query.count() >= 0)
+
+    # ---- the fault log keeps what the error page promises ---------------- #
+    faults.clear(app)
+    check("the fault log starts empty", faults.recent(app) == [])
+
+    try:
+        raise ValueError("a deliberate fault, for the test")
+    except ValueError as error:
+        faults.record(app, error, "/exams/1", "rva")
+
+    kept = faults.recent(app)
+    check("a fault is recorded", len(kept) == 1, str(len(kept)))
+    check("with the path it happened on", kept[0]["path"] == "/exams/1")
+    check("the kind of error", kept[0]["kind"] == "ValueError")
+    check("who was signed in", kept[0]["user"] == "rva")
+    check("and the traceback itself",
+          "a deliberate fault" in kept[0]["traceback"])
+
+    for index in range(5):
+        try:
+            raise RuntimeError(f"fault {index}")
+        except RuntimeError as error:
+            faults.record(app, error, f"/p/{index}")
+    kept = faults.recent(app, 3)
+    check("the newest faults come first and the list is capped",
+          len(kept) == 3 and kept[0]["path"] == "/p/4",
+          str([f["path"] for f in kept]))
+
+    faults.clear(app)
+    check("clearing really clears", faults.recent(app) == [])
+
+    # Recording must never raise, whatever it is handed: a broken recorder
+    # must not add a second failure on top of the first.
+    faults.record(app, ValueError("no path given"))
+    check("a fault with no path is still recorded",
+          len(faults.recent(app)) == 1)
+    faults.clear(app)
+
+    # ---- the administrator's page offers the repair ---------------------- #
+    admin = User.query.filter_by(username="admin").first()
+    admin.set_password("admin-for-repair")
+    db.session.commit()
+    with signed_in("admin", "admin-for-repair") as client:
+        body = client.get("/admin/system").get_data(as_text=True)
+        check("the system page offers a schema check",
+              "Check the schema again" in body or "Repair the database now" in body)
+        response = client.post("/admin/system/repair", follow_redirects=False)
+        check("the repair button works",
+              response.status_code in (302, 200), str(response.status_code))
+
+
+# --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
 
@@ -3039,6 +3124,7 @@ def main():
         ("Leaving the exam ends it", test_away_and_idle_submit),
         ("Screen capture measures", test_screen_capture_measures),
         ("Local-network restriction", test_network_restriction),
+        ("A half-finished upgrade", test_incomplete_upgrade),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

@@ -270,10 +270,41 @@ def _register_errors(app: Flask) -> None:
     def server_error(error):
         db.session.rollback()
         app.logger.exception("unhandled error at %s", request.path)
+
+        # Also kept where the page below says it is. The logger alone put it
+        # in a file an instructor on a shared host has no way to find, so the
+        # message was sending them somewhere that had nothing.
+        from . import faults
+        from flask_login import current_user
+
+        original = getattr(error, "original_exception", None) or error
+        faults.record(
+            app, original, request.path,
+            getattr(current_user, "username", "") if current_user else "",
+        )
+
+        # When the schema is the cause, say so here rather than letting an
+        # instructor hunt. A half-finished upgrade breaks one area of the
+        # portal completely while everything else carries on, which is about
+        # the most confusing shape a fault can take.
+        missing = (app.config.get("SCHEMA_REPORT") or {}).get("missing") or []
+        if missing:
+            return render_template(
+                "errors/error.html", code=500,
+                title="The last update did not finish",
+                message=(
+                    "The database is missing "
+                    + ", ".join(missing[:3])
+                    + (" and others" if len(missing) > 3 else "")
+                    + ". An administrator can put this right in one step on "
+                      "the System check page."
+                ),
+            ), 500
+
         return render_template("errors/error.html", code=500,
                                title="Something went wrong",
-                               message="The error has been logged. "
-                                       "Administrators can see details on the "
+                               message="The error has been recorded. An "
+                                       "administrator can read it on the "
                                        "System check page."), 500
 
 

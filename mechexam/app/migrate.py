@@ -152,6 +152,54 @@ def ensure_indexes(app) -> None:
             db.session.rollback()
 
 
+def verify_schema(app) -> list[str]:
+    """Columns the models expect that the database does not have.
+
+    Reconciling adds what is missing, but an ALTER can fail -- a locked
+    database while two workers start at once is the usual way -- and the
+    failure is recorded rather than raised, so the application carries on
+    with a column that is not there. Every query touching that table then
+    fails, which looks to the instructor like one part of the portal
+    breaking for no reason. This says plainly which column is absent.
+    """
+    missing: list[str] = []
+    try:
+        inspector = inspect(db.engine)
+        live = set(inspector.get_table_names())
+    except SQLAlchemyError as exc:
+        return [f"cannot inspect database: {exc}"]
+
+    for table in db.metadata.sorted_tables:
+        if table.name not in live:
+            missing.append(f"{table.name} (whole table)")
+            continue
+        have = _existing_columns(inspector, table.name)
+        for column in table.columns:
+            if column.name not in have:
+                missing.append(f"{table.name}.{column.name}")
+    return missing
+
+
+def repair(app) -> dict:
+    """Run the reconciliation again, on demand, and report what is left.
+
+    Offered as a button rather than only at start-up because a start-up that
+    half-failed is exactly the case where restarting is awkward and pressing
+    something is not.
+    """
+    with app.app_context():
+        report = reconcile_schema(app)
+        try:
+            db.metadata.create_all(bind=db.engine)
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            report["errors"].append(f"create_all: {exc}")
+        ensure_indexes(app)
+        report["missing"] = verify_schema(app)
+        app.config["SCHEMA_REPORT"] = report
+    return report
+
+
 def initialise(app) -> dict:
     """Full boot sequence for the database, in the order that matters."""
     with app.app_context():
@@ -170,5 +218,11 @@ def initialise(app) -> dict:
         report["errors"] += follow_up["errors"]
         # 4. Indexes last, once every column exists.
         ensure_indexes(app)
+        # 5. Say what is still missing. Adding a column can fail quietly --
+        #    a locked database while two workers start together -- and the
+        #    application would then run against a schema it cannot query.
+        report["missing"] = verify_schema(app)
+        if report["missing"]:
+            log.error("schema is incomplete: %s", ", ".join(report["missing"]))
         app.config["SCHEMA_REPORT"] = report
     return report

@@ -1760,3 +1760,13 @@ body.exam-running .exam-bar { position: relative; z-index: 41; }
 }
 .roomsteps { margin: 0.6rem 0 0.9rem; padding-left: 1.3rem; font-size: 0.9rem; }
 .roomsteps > li { margin-bottom: 0.6rem; }
+
+/* A recorded traceback. Monospaced, scrollable, and allowed to be wide --
+   wrapping a traceback makes it harder to read, not easier. */
+.fault summary .tail { color: var(--ink-soft); font-size: 0.8rem; margin-left: 0.5rem; }
+.fault-trace {
+  font-family: var(--mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: 0.74rem; line-height: 1.45; white-space: pre;
+  overflow-x: auto; background: var(--line-soft);
+  padding: 0.6rem 0.8rem; border-radius: var(--radius); margin: 0;
+}

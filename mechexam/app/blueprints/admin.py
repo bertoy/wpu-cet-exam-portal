@@ -782,7 +782,7 @@ def assistant():
 @superadmin_required
 def system():
     """Everything needed to diagnose a deployment without a developer."""
-    from .. import __version__
+    from .. import __version__, faults
     from ..assets import digest
 
     engine_url = str(db.engine.url)
@@ -824,7 +824,42 @@ def system():
         info=info,
         table_counts=table_counts,
         backups=backup_mod.list_backups(),
+        faults=faults.recent(current_app, 20),
     )
+
+
+@bp.route("/system/repair", methods=["POST"])
+@superadmin_required
+def repair_schema():
+    """Re-run the schema reconciliation without restarting the app."""
+    from .. import migrate
+
+    report = migrate.repair(current_app)
+    if report.get("missing"):
+        flash(
+            "Still missing after the repair: "
+            + ", ".join(report["missing"][:8])
+            + ". The database may be read-only or locked.",
+            "error",
+        )
+    elif report.get("added"):
+        flash(
+            f"Repaired. Added: {', '.join(report['added'])}.",
+            "success",
+        )
+    else:
+        flash("Nothing needed repairing — the schema is complete.", "success")
+    return redirect(url_for("admin.system"))
+
+
+@bp.route("/system/faults/clear", methods=["POST"])
+@superadmin_required
+def clear_faults():
+    from .. import faults
+
+    faults.clear(current_app)
+    flash("The recorded errors have been cleared.", "success")
+    return redirect(url_for("admin.system"))
 
 
 @bp.route("/system/backup", methods=["POST"])

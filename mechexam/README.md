@@ -482,6 +482,25 @@ is set, which is how the dual-database support is verified.
 
 ---
 
+## If one part of the portal breaks after an upgrade
+
+An upgrade adds columns to the database as the app starts. That can fail
+without stopping the app — most often because the disk is full or another
+worker held the database open at that moment — and the result is confusing:
+every page that reads the affected table fails with "Something went wrong"
+while the rest of the portal carries on as though nothing is wrong.
+
+The portal now checks for this itself. Administration ▸ System check names
+any column the app expects and the database does not have, and offers
+**Repair the database now**, which runs the migration again without a
+restart. The error page says the same thing rather than sending you looking.
+If the repair cannot finish either, the disk is the first thing to check: a
+full disk makes every write fail, including the one that adds the column.
+
+The same page keeps the last fifty unhandled errors with their tracebacks,
+under **Recent errors** — which is what the error page means when it says an
+administrator can see the details.
+
 ## If something goes wrong
 
 **A page looks unstyled.** Reload it once. If it persists, open

@@ -93,6 +93,25 @@
   <div class="card-head"><h2 class="grow">Database schema</h2></div>
   <div class="card-body">
     {% set schema = info.schema %}
+    {% if schema.missing %}
+    <div class="callout callout-error">
+      <span class="glyph" aria-hidden="true">&#9888;</span>
+      <div class="grow">
+        <p><strong>The database is missing columns the app needs.</strong>
+          Every page that reads one of these tables will fail. This usually
+          means an upgrade's migration could not finish — most often because
+          the database was locked by another worker at the time.</p>
+        <ul class="mono small">
+          {% for item in schema.missing %}<li>{{ item }}</li>{% endfor %}
+        </ul>
+        <form method="post" action="{{ url_for('admin.repair_schema') }}">
+          <button type="submit" class="button button-primary">
+            Repair the database now
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
     {% if schema.errors %}
       <div class="callout callout-error">
         <span class="glyph" aria-hidden="true">&#9888;</span>
@@ -116,6 +135,12 @@
           </p>
         </div>
       </div>
+    {% endif %}
+
+    {% if not schema.missing and not schema.errors %}
+    <form method="post" action="{{ url_for('admin.repair_schema') }}" class="mb1">
+      <button type="submit" class="button button-small">Check the schema again</button>
+    </form>
     {% endif %}
 
     {% if schema.added %}
@@ -258,6 +283,49 @@
       A backup contains password hashes and every student's marks. Keep it as
       carefully as you would the paper records.
     </p>
+    {% endif %}
+  </div>
+</div>
+
+{# --------------------------------------------------- recorded errors #}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Recent errors</h2>
+    {% if faults %}
+    <span class="pill pill-fail">{{ faults|length }}</span>
+    <form method="post" action="{{ url_for('admin.clear_faults') }}"
+          data-confirm="Clear the recorded errors?">
+      <button type="submit" class="button button-small">Clear</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if faults %}
+    <p class="small">
+      What the portal was doing when a page failed, newest first. Send the
+      topmost one to whoever maintains the app — it says exactly what went
+      wrong, which guessing from the error page cannot.
+    </p>
+    {% for fault in faults %}
+    <details class="panel fault">
+      <summary>
+        <span class="mono">{{ fault.kind }}</span>
+        <span class="tail">{{ fault.path }} &middot; {{ fault.at }}</span>
+      </summary>
+      <div class="panel-body">
+        <p class="small mb1">
+          <strong>{{ fault.message }}</strong>
+          {% if fault.user %}<br><span class="muted">signed in as {{ fault.user }}</span>{% endif %}
+        </p>
+        <pre class="fault-trace">{{ fault.traceback }}</pre>
+      </div>
+    </details>
+    {% endfor %}
+    {% else %}
+    <div class="empty">
+      <span class="glyph" aria-hidden="true">&#10003;</span>
+      <p>No errors have been recorded.</p>
+    </div>
     {% endif %}
   </div>
 </div>
