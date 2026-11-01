@@ -1,0 +1,57 @@
+{#
+  The assistant pane -- the add-in that opens beside the page you are on.
+
+  Included from base.html for staff only, and never when `hide_sidebar` is
+  set, which is what the examination-sitting page uses. Between the role test
+  here and `staff_required` on every route behind it, a student has no way to
+  reach this: not the button, not the markup, not the endpoint.
+
+  A page says what the pane may look at by setting two variables before it
+  extends anything:
+
+      {% set ai_kind = "exam" %}{% set ai_id = exam.id %}
+
+  Leave them out and the pane still opens; it simply has no page in front of
+  it and offers general help instead.
+#}
+<button type="button" class="ai-launch" data-ai-open
+        title="Assistant — draft, check, explain (Alt+A)"
+        aria-label="Open the assistant pane">
+  <span class="ai-launch-mark" aria-hidden="true">✦</span>
+  <span class="ai-launch-text">Assistant</span>
+</button>
+
+<aside class="ai-pane" data-ai-pane hidden
+       data-ai-kind="{{ ai_kind|default('') }}"
+       data-ai-id="{{ ai_id|default('') }}"
+       aria-label="Assistant" role="complementary">
+  <header class="ai-pane-head">
+    <div class="grow">
+      <strong>Assistant</strong>
+      <span class="ai-looking" data-ai-looking></span>
+    </div>
+    <button type="button" class="icon-button" data-ai-close
+            aria-label="Close the assistant">&times;</button>
+  </header>
+
+  <div class="ai-pane-note" data-ai-note hidden></div>
+
+  <div class="ai-thread" data-ai-thread>
+    <div class="ai-intro" data-ai-intro>
+      <p class="mb0">It can see this page. It drafts, checks and explains —
+      <strong>it never saves anything</strong>, so copy across whatever is
+      worth keeping.</p>
+    </div>
+    <div class="ai-actions" data-ai-actions></div>
+  </div>
+
+  <form class="ai-ask" data-ai-form>
+    <textarea data-ai-input rows="2" placeholder="Ask about this page…"
+              aria-label="Ask the assistant"></textarea>
+    <div class="ai-ask-row">
+      <span class="ai-hint">Enter sends · Shift+Enter for a new line</span>
+      <button type="submit" class="button button-primary button-small"
+              data-ai-send>Ask</button>
+    </div>
+  </form>
+</aside>

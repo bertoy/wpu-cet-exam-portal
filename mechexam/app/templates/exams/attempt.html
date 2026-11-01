@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set ai_kind = "attempt" %}{% set ai_id = attempt.id %}
 {% block title %}{{ attempt.student.display_name }} · {{ exam.title }}{% endblock %}
 
 {% block content %}

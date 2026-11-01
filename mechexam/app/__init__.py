@@ -53,6 +53,7 @@ def create_app(config_object=Config) -> Flask:
 def _register_blueprints(app: Flask) -> None:
     from .blueprints import (
         admin,
+        ai_pane,
         api,
         assistant,
         auth,
@@ -80,6 +81,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(student.bp, url_prefix="/my")
     app.register_blueprint(api.bp, url_prefix="/api")
     app.register_blueprint(assistant.bp, url_prefix="/assistant")
+    app.register_blueprint(ai_pane.bp, url_prefix="/ai")
 
 
 def _register_jinja(app: Flask) -> None:

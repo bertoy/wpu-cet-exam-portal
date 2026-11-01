@@ -95,9 +95,18 @@
   </main>
 </div>
 
+{% if current_user.is_authenticated and not hide_sidebar
+       and current_user.role in ('superadmin', 'instructor') %}
+  {% include "partials/ai_pane.html" %}
+{% endif %}
+
 <script src="{{ asset('vendor/katex/katex.min.js') }}" defer></script>
 <script src="{{ asset('js/app.js') }}" defer></script>
 <script src="{{ asset('js/equation.js') }}" defer></script>
+{% if current_user.is_authenticated and not hide_sidebar
+      and current_user.role in ('superadmin', 'instructor') %}
+<script src="{{ asset('js/aipane.js') }}" defer></script>
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

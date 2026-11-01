@@ -1770,3 +1770,132 @@ body.exam-running .exam-bar { position: relative; z-index: 41; }
   overflow-x: auto; background: var(--line-soft);
   padding: 0.6rem 0.8rem; border-radius: var(--radius); margin: 0;
 }
+
+/* --------------------------------------------------------------------------
+   The assistant pane
+   --------------------------------------------------------------------------
+   A side panel that opens over the right-hand edge on a desktop and covers
+   the screen on a phone. Only the variables already defined above are used,
+   so it follows light and dark with everything else.
+
+   The launcher sits above the content but below nothing else: a lecturer
+   marking a long paper should never have it land on top of a field they are
+   typing in, which is why it is pinned to the bottom-right corner and the
+   pane pushes the page rather than floating over the middle of it.
+   -------------------------------------------------------------------------- */
+
+.ai-launch {
+  position: fixed; right: 1rem; bottom: 1rem; z-index: 60;
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.6rem 0.95rem; border: 0; cursor: pointer;
+  border-radius: 999px; background: var(--navy-800); color: #fff;
+  font: 600 0.84rem/1 var(--font); box-shadow: var(--shadow-lg);
+}
+.ai-launch:hover { background: var(--navy-700); }
+.ai-launch:focus-visible { outline: 3px solid var(--gold-400); outline-offset: 2px; }
+.ai-launch-mark { color: var(--gold-400); font-size: 0.95rem; }
+
+.ai-pane {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 70;
+  width: min(420px, 100vw);
+  display: flex; flex-direction: column;
+  background: var(--paper); color: var(--ink);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+}
+.ai-pane[hidden] { display: none; }
+
+.ai-pane-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.7rem 0.6rem 0.7rem 1rem;
+  border-bottom: 1px solid var(--line); background: var(--navy-800);
+  color: #fff; flex: 0 0 auto;
+}
+.ai-pane-head .icon-button { color: #fff; font-size: 1.3rem; }
+.ai-looking {
+  display: block; font-size: 0.72rem; color: var(--gold-200);
+  font-weight: 400; margin-top: 0.1rem;
+}
+
+.ai-pane-note {
+  padding: 0.65rem 1rem; font-size: 0.8rem; line-height: 1.45;
+  background: var(--blue-100); color: var(--ink);
+  border-bottom: 1px solid var(--line); flex: 0 0 auto;
+}
+.ai-pane-note-warn { background: var(--amber-100); color: var(--amber-600); }
+
+.ai-thread {
+  flex: 1 1 auto; overflow-y: auto; padding: 0.9rem 1rem;
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+.ai-intro {
+  font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft);
+  background: var(--line-soft); padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm);
+}
+
+.ai-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ai-action {
+  border: 1px solid var(--line); background: var(--raised); color: var(--ink);
+  border-radius: 999px; padding: 0.38rem 0.75rem; cursor: pointer;
+  font: 500 0.78rem/1.2 var(--font); text-align: left;
+}
+.ai-action:hover { border-color: var(--navy-500); background: var(--line-soft); }
+
+.ai-msg { display: flex; flex-direction: column; gap: 0.3rem; }
+.ai-msg-body {
+  font-size: 0.85rem; line-height: 1.55; white-space: pre-wrap;
+  word-wrap: break-word; padding: 0.6rem 0.75rem; border-radius: var(--radius-sm);
+}
+.ai-msg-user .ai-msg-body {
+  background: var(--navy-800); color: #fff; align-self: flex-end;
+  max-width: 88%; margin-left: auto;
+}
+.ai-msg-assistant .ai-msg-body {
+  background: var(--line-soft); border: 1px solid var(--line);
+}
+.ai-msg.is-waiting .ai-msg-body { color: var(--ink-faint); font-style: italic; }
+.ai-msg-tools { display: flex; gap: 0.35rem; }
+.ai-chip {
+  border: 1px solid var(--line); background: var(--raised); color: var(--ink-soft);
+  border-radius: var(--radius-sm); padding: 0.2rem 0.5rem; cursor: pointer;
+  font: 500 0.72rem/1.2 var(--font);
+}
+.ai-chip:hover { color: var(--ink); border-color: var(--navy-500); }
+
+.ai-ask {
+  flex: 0 0 auto; border-top: 1px solid var(--line); padding: 0.7rem 1rem 0.9rem;
+  background: var(--raised);
+}
+.ai-ask textarea {
+  width: 100%; resize: vertical; min-height: 2.6rem;
+  font: 400 0.85rem/1.45 var(--font);
+  padding: 0.5rem 0.6rem; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); background: var(--paper); color: var(--ink);
+}
+.ai-ask-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6rem; margin-top: 0.5rem;
+}
+.ai-hint { font-size: 0.7rem; color: var(--ink-faint); }
+
+/* On a wide screen the page shrinks rather than being covered, so the
+   lecturer can read the paper and the suggestion side by side. */
+@media (min-width: 1100px) {
+  body.ai-pane-open .layout { padding-right: 420px; }
+  body.ai-pane-open .ai-launch { right: calc(420px + 1rem); }
+}
+@media (max-width: 520px) {
+  .ai-pane { width: 100vw; }
+  .ai-launch-text { display: none; }
+  .ai-launch { padding: 0.7rem; }
+}
+
+@media print {
+  .ai-launch, .ai-pane { display: none !important; }
+}
+
+.ai-action[disabled] { opacity: 0.45; cursor: not-allowed; }
+.ai-action[disabled]:hover { border-color: var(--line); background: var(--raised); }
+.ai-ask textarea[disabled] { background: var(--line-soft); color: var(--ink-faint); }
+.ai-ask .button[disabled] { opacity: 0.5; }

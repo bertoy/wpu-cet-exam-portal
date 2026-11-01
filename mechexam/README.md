@@ -297,6 +297,46 @@ Administration → System check → *Restore*, type `REPLACE`, and upload it.
   explanations can each be withheld, so the same page serves for handing back
   and for a paper you intend to reuse.
 
+### The assistant pane
+
+An add-in in the sense Word means it: a panel that slides in beside whatever
+page you are on, sees it, and drafts, checks or explains against it. Open it
+with the **Assistant** button at the bottom-right of any staff page, or with
+**Alt+A**.
+
+What it can see depends on where you opened it, and the quick actions change
+to match:
+
+| On | It can see | It offers |
+|---|---|---|
+| An examination | The whole paper, with your answer key and notes | Check this paper · Is the spread right? · Draft a few more items · Write the instructions |
+| One question | The item, its key and its rubric | Check this item · Make it harder · Better distractors · Write a worked solution |
+| A student's paper, being marked | The answers that need judgement, with the key and rubric | Suggest marks and feedback · Where did they go wrong? · Is my rubric covering this? |
+| A gradebook or class record | The figures, in aggregate | How is this class doing? · Who needs help, and with what? · Draft a remark |
+
+Three rules are built into it rather than left to good behaviour:
+
+* **It cannot save anything.** There is no code path from the pane to a
+  record — no session, no insert, no update. Everything it writes has a
+  **Copy** button, and copying is how a suggestion becomes a question or a
+  mark. `test_rules.py` reads the syntax tree of the pane and fails if the
+  machinery to write ever appears.
+* **It cannot cross into another instructor's subject.** The identifier the
+  browser sends is re-checked against your own subjects on every request, so
+  editing a number in a request gets you nothing.
+* **Students never see it**, and above all not during an examination. It is
+  not rendered on their pages, and every route behind it is staff-only.
+
+A student's paper goes to the model **without the student's name or number**.
+The model does not need it to judge an answer against a rubric, and a name is
+what turns a transcript into a record about a person.
+
+**It needs internet**, so it does nothing during an examination on the room's
+own network — which is the point of that network. The pane says so plainly
+rather than failing silently, and works again when you are back online. On
+PythonAnywhere's free tier it cannot work at all, because `api.anthropic.com`
+is not on the outbound allow-list; the $10 Developer plan lifts that.
+
 ### The authoring assistant
 
 * **A dedicated tab** where you describe the paper you want — "ten numerical

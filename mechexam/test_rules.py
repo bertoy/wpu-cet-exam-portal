@@ -2819,6 +2819,213 @@ def test_incomplete_upgrade():
               response.status_code in (302, 200), str(response.status_code))
 
 
+def test_ai_pane():
+    """The pane sees the page it is on — and nothing it has no business with.
+
+    Three properties matter more than anything the pane actually says, and
+    none of them can be checked by looking at the screen: a student must
+    never reach it, an instructor must never reach another instructor's
+    paper through it, and it must be structurally unable to write.
+    """
+    import pathlib
+
+    from app import ai_context
+    from app.models import Q_ESSAY, Q_MCQ
+
+    mine = make_instructor("pane-mine")
+    theirs = make_instructor("pane-theirs")
+    my_course = make_course("TEST-PANE-A", mine)
+    their_course = make_course("TEST-PANE-B", theirs)
+
+    exam = Exam(course_id=my_course.id, title="Pane Quiz", duration_minutes=30,
+                access_code="PANE1", school_year=my_course.school_year,
+                semester=my_course.semester,
+                instructions="Show all working.")
+    db.session.add(exam)
+    db.session.flush()
+    mcq = Question(exam_id=exam.id, qtype=Q_MCQ, text="What is the SI unit of power?",
+                   answer="b", points=2.0, order_index=1,
+                   explanation="Watt; candidates confuse it with the joule.")
+    mcq.options = ["joule", "watt", "newton"]
+    essay = Question(exam_id=exam.id, qtype=Q_ESSAY,
+                     text="Explain the second law in your own words.",
+                     points=10.0, order_index=2)
+    db.session.add_all([mcq, essay])
+
+    their_exam = Exam(course_id=their_course.id, title="Not Yours",
+                      duration_minutes=30, access_code="PANE2",
+                      school_year=their_course.school_year,
+                      semester=their_course.semester)
+    db.session.add(their_exam)
+
+    sitter = make_student("PN-0001")
+    db.session.add(Enrollment(course_id=my_course.id, student_id=sitter.id))
+    db.session.commit()
+
+    attempt = Attempt(exam_id=exam.id, student_id=sitter.id,
+                      status=ATTEMPT_SUBMITTED, started_at=utcnow(),
+                      submitted_at=utcnow())
+    db.session.add(attempt)
+    db.session.flush()
+    db.session.add(Answer(attempt_id=attempt.id, question_id=essay.id,
+                          response="Entropy always increases, sir.",
+                          needs_manual=True, max_points=10.0))
+    db.session.commit()
+
+    # ---- what the pane may look at, as the owner -------------------------- #
+    with signed_in("pane-mine", "pw-pane-mine") as client:
+        body = client.get(f"/exams/{exam.id}").get_data(as_text=True)
+        check("the pane is on an instructor's own exam page",
+              "data-ai-pane" in body)
+        check("and it is told what it is looking at",
+              f'data-ai-kind="exam"' in body and f'data-ai-id="{exam.id}"' in body)
+
+        reply = client.get(f"/ai/actions?kind=exam&id={exam.id}").get_json()
+        check("the quick actions name the paper",
+              "Pane Quiz" in (reply.get("looking_at") or ""),
+              str(reply.get("looking_at")))
+        check("and they are the ones for a paper",
+              any("Check this paper" == a["label"] for a in reply["actions"]),
+              str([a["label"] for a in reply["actions"]]))
+
+        # ---- another instructor's paper is simply not there -------------- #
+        reply = client.get(f"/ai/actions?kind=exam&id={their_exam.id}").get_json()
+        check("another instructor's paper gives the pane nothing",
+              not reply.get("looking_at"), str(reply.get("looking_at")))
+        check("and it falls back to general actions rather than erroring",
+              reply["actions"] and all("paper" not in a["label"].lower()
+                                       for a in reply["actions"]),
+              str([a["label"] for a in reply["actions"]]))
+
+    with signed_in("pane-theirs", "pw-pane-theirs") as client:
+        reply = client.get(f"/ai/actions?kind=exam&id={exam.id}").get_json()
+        check("and the refusal works in the other direction too",
+              not reply.get("looking_at"), str(reply.get("looking_at")))
+        reply = client.get(f"/ai/actions?kind=attempt&id={attempt.id}").get_json()
+        check("including a student's paper in a subject they do not teach",
+              not reply.get("looking_at"), str(reply.get("looking_at")))
+
+    # ---- the context itself ---------------------------------------------- #
+    with signed_in("pane-mine", "pw-pane-mine") as client:
+        with app.test_request_context():
+            pass
+        # gather() reads current_user, so exercise it through a request.
+        label, text = None, None
+        response = client.post("/ai/ask", json={"question": "hello",
+                                                "kind": "exam", "id": exam.id})
+        payload = response.get_json()
+        check("asking with no API key set fails politely, not with a 500",
+              response.status_code == 200 and payload.get("ok") is False,
+              f"{response.status_code} {payload}")
+        check("and says what an administrator has to do",
+              "not set up" in (payload.get("error") or "").lower()
+              or "api key" in (payload.get("error") or "").lower(),
+              str(payload.get("error")))
+
+        state = client.get("/ai/state").get_json()
+        check("the pane reports itself as not ready when no key is set",
+              state.get("ready") is False)
+        check("with a reason naming where to fix it",
+              "Administration" in (state.get("reason") or ""),
+              str(state.get("reason")))
+
+    with app.test_request_context():
+        from flask_login import login_user
+
+        login_user(db.session.get(User, mine.id))
+
+        label, text = ai_context.gather("exam", exam.id)
+        check("the exam context carries the questions",
+              "SI unit of power" in text)
+        check("and the answer key, because checking a paper needs it",
+              "key: b" in text, text[:200])
+        check("and the lecturer's own note",
+              "confuse it with the joule" in text)
+        check("and the instructions to students",
+              "Show all working" in text)
+
+        label, text = ai_context.gather("attempt", attempt.id)
+        check("a paper being marked carries what the student wrote",
+              "Entropy always increases" in text)
+        check("but never the student's name",
+              sitter.name not in text and "PN-0001" not in text, text[:300])
+        check("and says so, so the model does not ask for one",
+              "not named" in text)
+
+        label, text = ai_context.gather("course", my_course.id)
+        check("the class context is aggregate only",
+              "enrolled" in text and sitter.name not in text, text[:300])
+
+        label, text = ai_context.gather("exam", their_exam.id)
+        check("and gather() itself refuses another instructor's paper",
+              text == "" and label == "")
+        label, text = ai_context.gather("exam", 99999)
+        check("a row that does not exist gives the same empty answer",
+              text == "" and label == "")
+        label, text = ai_context.gather("nonsense", exam.id)
+        check("and so does a kind nobody implemented", text == "")
+
+    # ---- a student must never reach any of it ----------------------------- #
+    with signed_in("PN-0001", "PN-0001") as client:
+        for path in ("/ai/state", f"/ai/actions?kind=exam&id={exam.id}"):
+            response = client.get(path, follow_redirects=False)
+            check(f"a student is refused {path}",
+                  response.status_code in (302, 303, 403),
+                  str(response.status_code))
+        response = client.post("/ai/ask", json={"question": "what is the answer",
+                                                "kind": "exam", "id": exam.id},
+                               follow_redirects=False)
+        check("a student cannot ask the pane anything",
+              response.status_code in (302, 303, 403),
+              str(response.status_code))
+
+        body = client.get("/my/progress").get_data(as_text=True)
+        check("and the pane is not even rendered on a student's page",
+              "data-ai-pane" not in body and "aipane.js" not in body)
+
+    # Signed out entirely.
+    with app.test_client() as client:
+        response = client.get("/ai/state", follow_redirects=False)
+        check("and a stranger is sent to the sign-in page",
+              response.status_code in (302, 303), str(response.status_code))
+
+    # ---- the pane is structurally unable to save -------------------------- #
+    # Read the syntax tree rather than grepping the text, so that prose in a
+    # docstring describing what the pane must not do cannot fail the test,
+    # and so that a write cannot be hidden behind an alias or whitespace.
+    import ast
+
+    def writes_in(path: str) -> list[str]:
+        tree = ast.parse(pathlib.Path(path).read_text())
+        found = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                target = node.func
+                name = (target.attr if isinstance(target, ast.Attribute)
+                        else getattr(target, "id", ""))
+                if name in ("add", "add_all", "commit", "flush", "delete",
+                            "merge", "execute", "log_action", "update"):
+                    found.append(f"{path}: {name}()")
+            if isinstance(node, ast.Attribute) and node.attr == "session":
+                found.append(f"{path}: .session")
+        return found
+
+    offences = writes_in("app/blueprints/ai_pane.py")
+    check("the pane blueprint cannot write: no session, no add, no commit",
+          offences == [], str(offences))
+    offences = writes_in("app/ai_context.py")
+    check("and neither can the context it gathers", offences == [],
+          str(offences))
+
+    # ---- it must not appear over an examination in progress --------------- #
+    sitting = pathlib.Path("app/templates/student/sit.html").read_text()
+    check("the examination page still hides the sidebar, which hides the pane",
+          "hide_sidebar = true" in sitting)
+    base = pathlib.Path("app/templates/base.html").read_text()
+    check("and the pane is gated on both the role and that flag",
+          "not hide_sidebar" in base and "'superadmin', 'instructor'" in base)
+
+
 def test_results_transfer():
     """Carrying an examination back from the laptop must never overwrite.
 
@@ -3407,6 +3614,7 @@ def main():
         ("Screen capture measures", test_screen_capture_measures),
         ("Local-network restriction", test_network_restriction),
         ("A half-finished upgrade", test_incomplete_upgrade),
+        ("The assistant pane", test_ai_pane),
         ("Carrying results back from a laptop", test_results_transfer),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
