@@ -25,3 +25,8 @@ google-auth==2.41.1
 # variable, which is the better place for it anyway, and the administration
 # page says so rather than storing anything in the clear.
 cryptography==50.0.1
+
+# Serving the portal from a laptop on the room's own network. gunicorn above
+# does not run on Windows at all; waitress does, on every platform. Only
+# needed for a local examination -- a hosted deployment never uses it.
+waitress==3.0.2

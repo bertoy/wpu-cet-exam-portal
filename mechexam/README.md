@@ -482,6 +482,119 @@ is set, which is how the dual-database support is verified.
 
 ---
 
+## Running an examination on the room's own network
+
+The strongest thing you can do about a student looking an answer up is to
+take the internet out of the room. Nothing in the portal comes close to it.
+This runs the whole portal from your laptop, on a wireless network with no
+way out, so the examination also keeps working whatever the campus
+connection does that morning.
+
+Do steps 1 to 3 once, days before. Steps 4 to 9 on the day.
+
+### 1. Put the portal on the laptop (once)
+
+Install [Python](https://www.python.org/downloads/) — on Windows, tick
+**Add Python to PATH** on the first screen of the installer. Then download
+this repository (**Code ▸ Download ZIP** on GitHub) and unzip it somewhere
+you will find again, such as `Documents\mechexam`.
+
+### 2. Start it once at your desk (once)
+
+Open the `mechexam` folder and double-click **`start-exam-lan.bat`**
+(on a Mac or Linux, run `./start-exam-lan.sh`).
+
+The first run takes a few minutes and needs internet, because it installs
+what it depends on. After that it starts in seconds and needs no internet
+ever again. When it finishes it prints something like:
+
+```
+  Students open ONE of these on their phone:
+
+      http://192.168.1.14:8000/
+```
+
+Open that address in the laptop's own browser and sign in as the
+administrator. If this is a brand-new copy, the account is `admin` with the
+password `admin123` and it will make you change it immediately.
+
+### 3. Carry your subjects across (once)
+
+If your marks are on PythonAnywhere, take a backup there from
+**Administration ▸ System check ▸ Backup**, download the file, and restore
+it on the laptop from the same page. Otherwise set the subjects up here and
+import the class lists as usual.
+
+**Decide now which machine is the real one.** Marks entered on the laptop do
+not appear on PythonAnywhere, and the reverse. The simplest rule that does
+not go wrong: the laptop is the real one on examination day, and you restore
+its backup to PythonAnywhere afterwards.
+
+### 4. Set the room's wifi up
+
+Pick whichever you can manage. The first is the hardest to get wrong.
+
+| | What to do | Internet in the room |
+|---|---|---|
+| **A router with its internet cable unplugged** | Plug nothing into the socket marked WAN or Internet. Everyone joins its wifi. | None for anybody, including you — there is nothing to misconfigure |
+| **A router with the internet blocked for students** | Reserve an address for your laptop, then apply parental controls or an access schedule to every *other* device | You keep it, the room does not |
+| **Your phone as the hotspot** | Turn the hotspot on, turn **mobile data off** | None. But a hotspot usually caps at 8–10 devices, so not a class of sixty |
+
+### 5. Start the portal and find its address
+
+Join the examination wifi on the laptop, then double-click
+**`start-exam-lan.bat`**. Write the address it prints on the board.
+
+Windows will ask whether to allow it through the firewall the first time —
+**tick Private networks and allow it**. If no prompt appears and phones
+cannot connect, open PowerShell as administrator and run:
+
+```
+netsh advfirewall firewall add rule name="WPU Exam Portal" dir=in action=allow protocol=TCP localport=8000 profile=private
+```
+
+### 6. Lock the examination to that network
+
+In the exam, open **Set this up** beside *Networks this exam may be taken
+on*. The page shows the networks this laptop is on — press the one that
+matches and save. A student who leaves the room's wifi for mobile data is
+then refused before an attempt is created.
+
+This is the half the router cannot do. The router stops a phone reaching the
+internet; only the portal can stop a phone leaving the room's wifi
+altogether.
+
+### 7. Test it before the students arrive
+
+On your own phone, **with mobile data off**: open the address, sign in as a
+student, start the exam, answer one question. Then turn mobile data on and
+try again — you should be refused. Two minutes here saves an examination.
+
+### 8. Run the examination
+
+Press **Open the exam** when the class is seated; the clock starts for
+everyone at once. Keep the **Monitor** page open — it drives the checks that
+end an abandoned attempt, and shows you who has finished.
+
+### 9. Afterwards — back it up before anything else
+
+**Administration ▸ System check ▸ Backup**, download the file, and copy it
+somewhere that is not the laptop. The marks exist in one place until you do.
+Restore it to PythonAnywhere if that is where you keep the term's records.
+
+### What can still go wrong
+
+* **A phone cannot open the address.** Nearly always the firewall (step 5) or
+  the phone being on a different wifi. Check the laptop can open the address
+  itself first — if it can and a phone cannot, it is the firewall.
+* **The laptop sleeps.** Set it never to sleep on mains power for the day.
+* **One student hotspots for the row.** The network rule cannot see this,
+  because those phones still arrive on a wifi address. Only invigilation
+  catches it.
+* **The laptop's address changes** between setting it up and the examination,
+  if the router hands out a different one. Check the address on the board
+  matches what the script printed that morning.
+
 ## If one part of the portal breaks after an upgrade
 
 An upgrade adds columns to the database as the app starts. That can fail
