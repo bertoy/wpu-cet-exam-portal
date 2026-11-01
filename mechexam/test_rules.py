@@ -11,6 +11,7 @@ Runs against a throw-away database, so it never touches real records.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import shutil
@@ -2818,6 +2819,287 @@ def test_incomplete_upgrade():
               response.status_code in (302, 200), str(response.status_code))
 
 
+def test_results_transfer():
+    """Carrying an examination back from the laptop must never overwrite.
+
+    The two sides are two copies of this app, which in production are two
+    processes with two databases.  Here one database stands in for both: a
+    package is built from one subject and applied to a second with the same
+    paper and the same gradebook structure, which is exactly the receiving
+    side's situation.  What is being tested is the merge, and the merge only
+    ever matches on names, codes and student numbers -- never on row ids --
+    so it behaves the same whichever way the two copies are arranged.
+    """
+    from app import sync
+    from app.models import IntegrityEvent, Q_MCQ
+
+    teacher = make_instructor("sync-teacher")
+    laptop = make_course("TEST-SYNC-L", teacher)
+    web = make_course("TEST-SYNC-W", teacher)
+
+    def build_exam(course, questions=3):
+        exam = Exam(course_id=course.id, title="Final Examination",
+                    duration_minutes=60, access_code=f"S{course.id}",
+                    school_year=course.school_year, semester=course.semester)
+        db.session.add(exam)
+        db.session.flush()
+        for index in range(questions):
+            question = Question(exam_id=exam.id, qtype=Q_MCQ,
+                                text=f"Question {index + 1}", answer="a",
+                                points=2.0, order_index=index + 1)
+            question.options = ["a", "b", "c"]
+            db.session.add(question)
+        db.session.flush()
+        return exam
+
+    laptop_exam = build_exam(laptop)
+    build_exam(web)
+
+    laptop_item = add_item(laptop, SCOPE_LECTURE, "Written Works", "Quiz 1", 50.0)
+    add_item(web, SCOPE_LECTURE, "Written Works", "Quiz 1", 50.0)
+
+    # Two students the web already knows, and one enrolled late in the room.
+    known = [make_student("SY-0001"), make_student("SY-0002")]
+    latecomer = make_student("SY-0003")
+    for student in known:
+        db.session.add(Enrollment(course_id=web.id, student_id=student.id))
+    for student in known + [latecomer]:
+        db.session.add(Enrollment(course_id=laptop.id, student_id=student.id))
+    db.session.commit()
+
+    questions = sorted(laptop_exam.questions, key=lambda q: q.order_index)
+    for offset, student in enumerate(known + [latecomer]):
+        attempt = Attempt(exam_id=laptop_exam.id, student_id=student.id,
+                          status=ATTEMPT_SUBMITTED, started_at=utcnow(),
+                          submitted_at=utcnow(), seed=3)
+        attempt.question_order = [q.id for q in questions]
+        db.session.add(attempt)
+        db.session.flush()
+        for index, question in enumerate(questions):
+            db.session.add(Answer(attempt_id=attempt.id, question_id=question.id,
+                                  response="a" if (index + offset) % 2 == 0 else "b"))
+        db.session.add(IntegrityEvent(attempt_id=attempt.id, kind="hidden",
+                                      detail="left the paper"))
+        db.session.commit()
+        mark_attempt(attempt, questions)
+        db.session.add(Score(item_id=laptop_item.id, student_id=student.id,
+                             points=40.0 + offset))
+    db.session.commit()
+
+    # ---- what travels ---------------------------------------------------- #
+    package = sync.build_package(laptop)
+    check("the package carries every student in the room",
+          len(package["students"]) == 3, str(len(package["students"])))
+    check("and every attempt",
+          len(package["exams"][0]["attempts"]) == 3)
+    check("and the gradebook marks typed on the laptop",
+          len(package["marks"]) == 3, str(len(package["marks"])))
+    check("answers travel by question position, not by row id",
+          all(isinstance(a["question"], int)
+              for a in package["exams"][0]["attempts"][0]["answers"]))
+    check("the paper's question count travels, so a mismatch can be caught",
+          package["exams"][0]["question_count"] == 3)
+    check("final grades are never sent", "final_grades" not in package)
+    check("and neither are passwords",
+          not any("password" in key for row in package["students"].values()
+                  for key in row))
+
+    # Re-point it at the receiving subject, which is what a real package
+    # arriving from a laptop looks like to the main portal.  The late enrolee
+    # is renamed to a number this database has never seen, because in a single
+    # database standing in for two they would already exist and the receiving
+    # side would rightly not create them -- and then nothing would test that
+    # it can.
+    old_key, new_key = sync._student_key(latecomer), "sy-9003"
+
+    def retarget(pkg):
+        pkg["course"]["code"] = web.code
+        if old_key in pkg["students"]:
+            pkg["students"][new_key] = dict(pkg["students"].pop(old_key),
+                                            student_number="SY-9003",
+                                            username="SY-9003")
+        for exam_row in pkg["exams"]:
+            for attempt_row in exam_row["attempts"]:
+                if attempt_row["student"] == old_key:
+                    attempt_row["student"] = new_key
+        for mark in pkg["marks"]:
+            if mark["student"] == old_key:
+                mark["student"] = new_key
+        return pkg
+
+    retarget(package)
+
+    # ---- the first merge -------------------------------------------------- #
+    report = sync.apply_package(package)
+    check("the late enrolee is created on the main portal",
+          report["students_created"] == 1, str(report["students_created"]))
+    check("all three attempts are written",
+          report["attempts_written"] == 3, str(report["attempts_written"]))
+    check("with all of their answers",
+          report["answers_written"] == 9, str(report["answers_written"]))
+    check("the integrity events come too",
+          report["events_written"] == 3, str(report["events_written"]))
+    check("and the gradebook marks are written",
+          report["marks_written"] == 3, str(report["marks_written"]))
+
+    web_exam = Exam.query.filter_by(course_id=web.id).first()
+    merged = Attempt.query.filter_by(exam_id=web_exam.id).all()
+    check("the attempts really are in the receiving database",
+          len(merged) == 3, str(len(merged)))
+    check("the marking travelled with them, not just the answers",
+          all(a.score is not None for a in merged),
+          str([a.score for a in merged]))
+    check("and each answer is attached to the right question",
+          all(all(ans.question_id in {q.id for q in web_exam.questions}
+                  for ans in a.answers) for a in merged))
+    created = User.query.filter_by(student_number="SY-9003").first()
+    check("the late enrolee is enrolled, not merely created",
+          created is not None and Enrollment.query.filter_by(
+              course_id=web.id, student_id=created.id).first() is not None)
+
+    # ---- sending twice must do nothing the second time -------------------- #
+    again = sync.apply_package(package)
+    check("a resend writes no attempt a second time",
+          again["attempts_written"] == 0, str(again["attempts_written"]))
+    check("it leaves the submitted papers alone and says so",
+          again["attempts_skipped"] == 3, str(again["attempts_skipped"]))
+    check("and names the students whose papers it did not touch",
+          any("SY-0001" in note or "Student SY-0001" in note
+              for note in again["notes"]), str(again["notes"]))
+    check("a mark that is not newer is left alone",
+          again["marks_written"] == 0 and again["marks_skipped"] == 3,
+          f"{again['marks_written']}/{again['marks_skipped']}")
+    check("no student is created twice",
+          again["students_created"] == 0)
+    check("and the database has not grown",
+          Attempt.query.filter_by(exam_id=web_exam.id).count() == 3)
+
+    # ---- a mark changed on the laptop after the first send ---------------- #
+    later = utcnow() + timedelta(minutes=5)
+    for mark in package["marks"]:
+        mark["points"] = 48.0
+        mark["updated_at"] = later.isoformat()
+    newer = sync.apply_package(package)
+    check("a newer mark does replace the one here",
+          newer["marks_written"] == 3, str(newer["marks_written"]))
+    web_item = next(item for component in web.components
+                    for item in component.items if item.title == "Quiz 1")
+    check("and the new figure is the one stored",
+          all(near(s.points, 48.0)
+              for s in Score.query.filter_by(item_id=web_item.id).all()))
+
+    # ---- what it refuses to guess at -------------------------------------- #
+    stray = dict(package)
+    stray["course"] = dict(package["course"], code="TEST-SYNC-NOPE")
+    refused = sync.apply_package(stray)
+    check("a subject that does not exist here is reported, not created",
+          refused["attempts_written"] == 0 and refused["notes"],
+          str(refused))
+    check("and the note says what to do about it",
+          "TEST-SYNC-NOPE" in refused["notes"][0])
+
+    renamed = json.loads(json.dumps(package))
+    renamed["exams"][0]["title"] = "A Paper Nobody Made Here"
+    missing = sync.apply_package(renamed)
+    check("an examination that does not exist here is reported",
+          missing["attempts_written"] == 0 and
+          any("Nobody Made Here" in note for note in missing["notes"]),
+          str(missing["notes"]))
+
+    mismatched = json.loads(json.dumps(package))
+    mismatched["exams"][0]["question_count"] = 5
+    wrong = sync.apply_package(mismatched)
+    check("a paper with a different number of questions is refused outright",
+          wrong["attempts_written"] == 0 and
+          any("question" in note for note in wrong["notes"]),
+          str(wrong["notes"]))
+
+    future = json.loads(json.dumps(package))
+    future["format"] = sync.FORMAT + 1
+    ahead = sync.apply_package(future)
+    check("a package from a newer version of the portal is not guessed at",
+          ahead["attempts_written"] == 0 and
+          any("newer version" in note for note in ahead["notes"]),
+          str(ahead["notes"]))
+
+    # ---- an attempt still in progress here may be replaced ---------------- #
+    spare = make_student("SY-0004")
+    db.session.add(Enrollment(course_id=web.id, student_id=spare.id))
+    db.session.add(Enrollment(course_id=laptop.id, student_id=spare.id))
+    db.session.commit()
+    open_here = Attempt(exam_id=web_exam.id, student_id=spare.id,
+                        status=ATTEMPT_IN_PROGRESS, started_at=utcnow())
+    db.session.add(open_here)
+    attempt = Attempt(exam_id=laptop_exam.id, student_id=spare.id,
+                      status=ATTEMPT_SUBMITTED, started_at=utcnow(),
+                      submitted_at=utcnow(), seed=3)
+    attempt.question_order = [q.id for q in questions]
+    db.session.add(attempt)
+    db.session.flush()
+    db.session.add(Answer(attempt_id=attempt.id, question_id=questions[0].id,
+                          response="a"))
+    db.session.commit()
+
+    resumed = sync.apply_package(retarget(sync.build_package(laptop)))
+    check("an unfinished paper here is replaced by the finished one",
+          resumed["attempts_written"] == 1, str(resumed["attempts_written"]))
+    check("the three already-submitted papers are still left alone",
+          resumed["attempts_skipped"] == 3, str(resumed["attempts_skipped"]))
+    check("and the replaced attempt is now submitted",
+          reload(open_here).status == ATTEMPT_SUBMITTED)
+    check("replacing it did not leave the old answers behind",
+          len(reload(open_here).answers) == 1,
+          str(len(reload(open_here).answers)))
+
+    # ---- the token is the only thing standing in front of the gradebook --- #
+    Setting.put(sync.SETTING_TOKEN, "")
+    db.session.commit()
+    with app.test_client() as client:
+        response = client.post("/api/sync", json=package,
+                               headers={"x-sync-token": "anything"})
+        check("a copy with no token set refuses to receive at all",
+              response.status_code == 403, str(response.status_code))
+
+    Setting.put(sync.SETTING_TOKEN, "the-right-token")
+    db.session.commit()
+    with app.test_client() as client:
+        response = client.post("/api/sync", json=package,
+                               headers={"x-sync-token": "the-wrong-token"})
+        check("a wrong token is refused",
+              response.status_code == 403, str(response.status_code))
+        response = client.post("/api/sync", json=package)
+        check("and so is no token at all",
+              response.status_code == 403, str(response.status_code))
+        response = client.post("/api/sync", json=package,
+                               headers={"x-sync-token": "the-right-token"})
+        check("the right token is accepted",
+              response.status_code == 200, str(response.status_code))
+        check("and the reply is the same report the page shows",
+              "report" in response.get_json())
+
+    # ---- sending with nothing set up must not throw ----------------------- #
+    Setting.put(sync.SETTING_URL, "")
+    db.session.commit()
+    check("sending with no address set fails politely",
+          sync.send(package).get("ok") is False)
+    check("and is_configured says why",
+          sync.is_configured() is False)
+
+    Setting.put(sync.SETTING_URL, "http://127.0.0.1:9")   # nothing listens there
+    db.session.commit()
+    result = sync.send(package, timeout=5)
+    check("an unreachable portal is reported as offline, to retry later",
+          result.get("ok") is False and result.get("offline") is True,
+          str(result))
+    sync.remember_result(result)
+    check("the last attempt is remembered for the page to show",
+          sync.last_result().get("ok") is False)
+
+    Setting.put(sync.SETTING_URL, "")
+    Setting.put(sync.SETTING_TOKEN, "")
+    db.session.commit()
+
+
 # --------------------------------------------------------------------------- #
 # 15. Grade release gate
 # --------------------------------------------------------------------------- #
@@ -3125,6 +3407,7 @@ def main():
         ("Screen capture measures", test_screen_capture_measures),
         ("Local-network restriction", test_network_restriction),
         ("A half-finished upgrade", test_incomplete_upgrade),
+        ("Carrying results back from a laptop", test_results_transfer),
         ("Grade release gate", test_grade_release),
         ("Student isolation", test_student_isolation),
         ("Data outlives the code", test_data_outlives_code),

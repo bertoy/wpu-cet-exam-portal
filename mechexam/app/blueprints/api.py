@@ -3,15 +3,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, jsonify
+import hmac
+
+from flask import Blueprint, current_app, jsonify, request
 from flask_login import login_required
 
 
+from ..extensions import db
 from ..models import (
     Attempt,
     ATTEMPT_IN_PROGRESS,
     ATTEMPT_SUBMITTED,
     Exam,
+    Setting,
+    log_action,
 )
 from ..security import require_course, staff_required
 
@@ -108,6 +113,49 @@ def expire_check(exam_id: int):
 
     _expire(exam)
     return jsonify({"expired": True})
+
+
+@bp.route("/sync", methods=["POST"])
+def receive_sync():
+    """Accept an examination's results from a laptop that ran it offline.
+
+    Authenticated by a shared token rather than a signed-in session, because
+    the sender is a machine. Deliberately not usable unless a token has been
+    set on this copy: an endpoint that accepts anything from anyone would be
+    a way to write marks into the gradebook from outside.
+    """
+    from .. import sync
+
+    expected = (Setting.get(sync.SETTING_TOKEN, "") or "").strip()
+    if not expected:
+        return jsonify({"ok": False,
+                        "error": "This portal is not accepting results. An "
+                                 "administrator sets a token first."}), 403
+
+    offered = (request.headers.get("x-sync-token") or "").strip()
+    # Compared in constant time so the token cannot be guessed a character at
+    # a time by watching how long the answer takes.
+    if not hmac.compare_digest(offered, expected):
+        return jsonify({"ok": False, "error": "token refused"}), 403
+
+    package = request.get_json(silent=True)
+    if not isinstance(package, dict):
+        return jsonify({"ok": False, "error": "expected a JSON package"}), 400
+
+    try:
+        report = sync.apply_package(package)
+    except Exception as exc:                            # noqa: BLE001
+        db.session.rollback()
+        current_app.logger.exception("sync failed")
+        from .. import faults
+        faults.record(current_app, exc, "/api/sync", "sync")
+        return jsonify({"ok": False, "error": f"could not merge: {exc}"}), 500
+
+    course = (package.get("course") or {}).get("code", "?")
+    log_action(None, "sync_received", "course", None,
+               f"{course}: {report.get('attempts_written', 0)} attempt(s)")
+    db.session.commit()
+    return jsonify({"ok": True, "report": report})
 
 
 @bp.route("/katex/check")

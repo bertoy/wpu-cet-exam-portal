@@ -529,7 +529,7 @@ def routes_for(client, role_label):
             "/admin/users/new", f"/admin/users/{student.id}",
             f"/admin/users/{instructor.id}",
             "/admin/subjects", "/admin/system", "/admin/audit",
-            "/admin/assistant", "/admin/password-prompts",
+            "/admin/assistant", "/admin/password-prompts", "/admin/sync",
             "/admin/password-prompts?pending=0",
         ]
 

@@ -103,6 +103,54 @@ def banner(addresses: list[str], port: int, data_dir: Path) -> None:
     print(line + "\n")
 
 
+def start_auto_sync(application, every_seconds: int = 300) -> None:
+    """Try to push results to the main portal whenever there is a connection.
+
+    Runs in the background while the examination server is up. It does
+    nothing when nothing is configured, nothing when there is no connection,
+    and says so on the Results transfer page either way. Deliberately quiet:
+    an examination in progress is not the moment for a dialogue about the
+    network.
+    """
+    import threading
+
+    def loop() -> None:
+        import time
+
+        from app import sync
+        from app.models import Course, Setting
+
+        while True:
+            time.sleep(every_seconds)
+            try:
+                with application.app_context():
+                    if not Setting.get_bool(sync.SETTING_ENABLED):
+                        continue
+                    if not sync.is_configured():
+                        continue
+
+                    year, semester = Setting.term()
+                    courses = Course.query.filter_by(
+                        school_year=year, semester=semester
+                    ).all()
+                    for course in courses:
+                        package = sync.build_package(course)
+                        if not package.get("exams") and not package.get("marks"):
+                            continue
+                        result = sync.send(package, timeout=90)
+                        sync.remember_result(result)
+                        if result.get("ok"):
+                            print(f"  [sync] {course.code}: sent to the main portal")
+                        elif not result.get("offline"):
+                            print(f"  [sync] {course.code}: {result.get('error')}")
+                        else:
+                            break      # no connection; try the whole lot later
+            except Exception as error:                  # noqa: BLE001
+                print(f"  [sync] skipped this round: {error}")
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
@@ -128,6 +176,15 @@ def main() -> int:
               + ", ".join(report["missing"][:5]))
         print("     Sign in as the administrator and use System check ▸ "
               "Repair the database now before the examination.\n")
+
+    with application.app_context():
+        from app import sync
+        from app.models import Setting
+
+        if Setting.get_bool(sync.SETTING_ENABLED) and sync.is_configured():
+            print("  Results will be sent to "
+                  f"{Setting.get(sync.SETTING_URL)} when there is a connection.")
+            start_auto_sync(application)
 
     banner(local_addresses(), args.port, data_dir)
 

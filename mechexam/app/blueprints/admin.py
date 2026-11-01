@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import datetime
 
 from flask import (
@@ -825,6 +826,110 @@ def system():
         table_counts=table_counts,
         backups=backup_mod.list_backups(),
         faults=faults.recent(current_app, 20),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Carrying results back from a laptop
+# --------------------------------------------------------------------------- #
+
+@bp.route("/sync", methods=["GET", "POST"])
+@superadmin_required
+def sync_page():
+    """Both ends of it: where to send, and what to send now.
+
+    The same page serves the laptop and the main portal, because which one a
+    copy is depends only on whether an address has been filled in.
+    """
+    from .. import sync
+
+    if request.method == "POST":
+        action = request.form.get("action") or "save"
+
+        if action == "save":
+            Setting.put(sync.SETTING_URL,
+                        (request.form.get("sync_url") or "").strip().rstrip("/"))
+            token = (request.form.get("sync_token") or "").strip()
+            if token or "sync_token" in request.form:
+                Setting.put(sync.SETTING_TOKEN, token)
+            Setting.put(sync.SETTING_ENABLED,
+                        "1" if request.form.get("sync_enabled") else "0")
+            db.session.commit()
+            flash("Saved.", "success")
+            return redirect(url_for("admin.sync_page"))
+
+        if action == "token":
+            Setting.put(sync.SETTING_TOKEN, secrets.token_urlsafe(32))
+            db.session.commit()
+            flash("A new token has been generated. Copy it to the other "
+                  "machine — the old one no longer works.", "success")
+            return redirect(url_for("admin.sync_page"))
+
+        if action == "send":
+            course = Course.query.get_or_404(request.form.get("course_id", type=int))
+            package = sync.build_package(course)
+            result = sync.send(package)
+            sync.remember_result(result)
+            if result.get("ok"):
+                report = result.get("report") or {}
+                flash(
+                    f"Sent. {report.get('attempts_written', 0)} attempt(s) and "
+                    f"{report.get('marks_written', 0)} mark(s) merged; "
+                    f"{report.get('attempts_skipped', 0)} left alone.",
+                    "success",
+                )
+                for note in (report.get("notes") or [])[:6]:
+                    flash(note, "warning")
+            else:
+                flash(result.get("error") or "The send failed.", "error")
+            return redirect(url_for("admin.sync_page"))
+
+        if action == "download":
+            course = Course.query.get_or_404(request.form.get("course_id", type=int))
+            package = sync.build_package(course)
+            body = json.dumps(package, indent=1)
+            stamp = datetime.now().strftime("%Y%m%d-%H%M")
+            return current_app.response_class(
+                body, mimetype="application/json",
+                headers={"Content-Disposition":
+                         f'attachment; filename="results-{course.code}-{stamp}.json"'},
+            )
+
+        if action == "upload":
+            uploaded = request.files.get("package")
+            if uploaded is None or not uploaded.filename:
+                flash("Choose a results file first.", "error")
+                return redirect(url_for("admin.sync_page"))
+            try:
+                package = json.loads(uploaded.read().decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                flash("That file is not a results package.", "error")
+                return redirect(url_for("admin.sync_page"))
+            report = sync.apply_package(package)
+            flash(
+                f"Merged. {report.get('attempts_written', 0)} attempt(s) and "
+                f"{report.get('marks_written', 0)} mark(s) written; "
+                f"{report.get('attempts_skipped', 0)} left alone.",
+                "success",
+            )
+            for note in (report.get("notes") or [])[:6]:
+                flash(note, "warning")
+            return redirect(url_for("admin.sync_page"))
+
+    year, semester = Setting.term()
+    courses = (
+        Course.query.filter_by(school_year=year, semester=semester)
+        .order_by(Course.code)
+        .all()
+    )
+    return render_template(
+        "admin/sync.html",
+        courses=courses,
+        sync_url=Setting.get(sync.SETTING_URL, ""),
+        has_token=bool((Setting.get(sync.SETTING_TOKEN, "") or "").strip()),
+        token=Setting.get(sync.SETTING_TOKEN, ""),
+        enabled=Setting.get_bool(sync.SETTING_ENABLED),
+        last=sync.last_result(),
     )
 
 

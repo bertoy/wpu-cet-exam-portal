@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Results transfer · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('admin.index') }}">Administration</a><span>/</span>Results transfer
+</div>
+
+<div class="page-head">
+  <div class="grow">
+    <h1>Carrying results back from a laptop</h1>
+    <p class="page-sub">
+      An examination run on the room's own network leaves the marks on that
+      laptop. This moves them into the main portal without replacing anything
+      already there.
+    </p>
+  </div>
+</div>
+
+<div class="callout callout-info">
+  <span class="glyph" aria-hidden="true">&#8505;</span>
+  <div class="grow">
+    <p class="mb0">
+      Set this page up on <strong>both</strong> machines. On the main portal,
+      generate a token and leave the address blank. On the laptop, paste the
+      main portal's web address and the same token. The laptop then sends; the
+      main portal receives.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2 class="grow">This machine</h2>
+      {% if sync_url %}<span class="pill pill-info">sends</span>
+      {% elif has_token %}<span class="pill pill-pass">receives</span>
+      {% else %}<span class="pill pill-closed">not set up</span>{% endif %}
+    </div>
+    <div class="card-body">
+      <form method="post">
+        <input type="hidden" name="action" value="save">
+        <div class="field">
+          <label for="sync_url">Address of the main portal</label>
+          <input type="url" id="sync_url" name="sync_url" class="mono"
+                 value="{{ sync_url }}"
+                 placeholder="https://bertoy.pythonanywhere.com">
+          <p class="field-hint">
+            Fill this in on the <strong>laptop</strong> only. Leave it blank on
+            the main portal — a copy with no address is the one that receives.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="sync_token">Shared token</label>
+          <input type="text" id="sync_token" name="sync_token" class="mono"
+                 value="{{ token }}" spellcheck="false" autocomplete="off">
+          <p class="field-hint">
+            The same string on both machines. Anything holding it can write
+            marks into this gradebook, so treat it as a password: do not put
+            it in an email you would not put a password in.
+          </p>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" name="sync_enabled" value="1" {{ 'checked' if enabled }}>
+          <span>Send automatically when the laptop is online
+            <span class="check-note">
+              Checked every few minutes while the examination server is
+              running. It does nothing when there is no connection, and tries
+              again later.
+            </span></span>
+        </label>
+
+        <div class="button-row">
+          <button type="submit" class="button button-primary">Save</button>
+          <button type="submit" name="action" value="token" class="button"
+                  formnovalidate>Generate a token</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="grow">Send results now</h2></div>
+    <div class="card-body">
+      {% if courses %}
+      <form method="post">
+        <div class="field">
+          <label for="course_id">Subject</label>
+          <select id="course_id" name="course_id" required>
+            {% for course in courses %}
+            <option value="{{ course.id }}">{{ course.code }} — {{ course.title|truncate(40) }}</option>
+            {% endfor %}
+          </select>
+          <p class="field-hint">
+            Everything its examinations produced: attempts, answers, the
+            marking, and the gradebook marks for that subject.
+          </p>
+        </div>
+        <div class="button-row">
+          <button type="submit" name="action" value="send" class="button button-primary"
+                  {{ 'disabled' if not sync_url }}>Send to the main portal</button>
+          <button type="submit" name="action" value="download" class="button">
+            Download as a file
+          </button>
+        </div>
+      </form>
+      {% if not sync_url %}
+      <p class="field-hint">
+        No main portal address is set, so sending is off. The download still
+        works — carry the file on a USB stick and upload it below on the other
+        machine.
+      </p>
+      {% endif %}
+      {% else %}
+      <p class="small">No subjects in the current term.</p>
+      {% endif %}
+
+      <hr class="rule">
+
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="upload">
+        <div class="field">
+          <label for="package">…or merge a results file brought from a laptop</label>
+          <input type="file" id="package" name="package" accept=".json,application/json">
+        </div>
+        <button type="submit" class="button">Merge the file</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if last %}
+<div class="card">
+  <div class="card-head">
+    <h2 class="grow">Last transfer</h2>
+    <span class="pill {{ 'pill-pass' if last.ok else 'pill-fail' }}">
+      {{ 'succeeded' if last.ok else 'failed' }}
+    </span>
+  </div>
+  <div class="card-body">
+    <p class="small">{{ last.at }}</p>
+    {% if last.ok %}
+      {% set r = last.report %}
+      <ul class="small mb0">
+        <li>{{ r.attempts_written or 0 }} attempt(s) written,
+            {{ r.attempts_skipped or 0 }} left alone</li>
+        <li>{{ r.answers_written or 0 }} answer(s), {{ r.events_written or 0 }} event(s)</li>
+        <li>{{ r.marks_written or 0 }} gradebook mark(s) written,
+            {{ r.marks_skipped or 0 }} left alone</li>
+        <li>{{ r.students_created or 0 }} new student account(s) created</li>
+      </ul>
+      {% if r.notes %}
+      <p class="label-like mt1">Worth reading:</p>
+      <ul class="small mb0">
+        {% for note in r.notes %}<li>{{ note }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    {% else %}
+      <p class="small mb0">{{ last.error }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-head"><h2 class="grow">What is and is not moved</h2></div>
+  <div class="card-body">
+    <p class="small">
+      The laptop is treated as authoritative for what happened during the
+      examination, and for nothing else. Nothing is ever deleted.
+    </p>
+    <ul class="small">
+      <li><strong>A student already on the main portal keeps their name and
+        password.</strong> Only a student who is not there at all is created.</li>
+      <li><strong>An attempt already submitted on the main portal is left
+        alone</strong> and reported, because an essay may have been marked or
+        a score adjusted there since.</li>
+      <li><strong>A gradebook mark is written only if it is newer</strong> than
+        the one here, or if there is none.</li>
+      <li><strong>Final grades are never sent.</strong> Finalising a subject is
+        deliberate and belongs where the records are kept.</li>
+      <li><strong>The subject and the examination must already exist here</strong>
+        with the same code, term and title. Anything that cannot be matched is
+        reported rather than guessed at.</li>
+    </ul>
+    <p class="small mb0">
+      Sending twice does the same as sending once, so a retry after a dropped
+      connection is safe.
+    </p>
+  </div>
+</div>
+{% endblock %}

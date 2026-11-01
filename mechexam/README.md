@@ -526,9 +526,12 @@ it on the laptop from the same page. Otherwise set the subjects up here and
 import the class lists as usual.
 
 **Decide now which machine is the real one.** Marks entered on the laptop do
-not appear on PythonAnywhere, and the reverse. The simplest rule that does
-not go wrong: the laptop is the real one on examination day, and you restore
-its backup to PythonAnywhere afterwards.
+not appear on PythonAnywhere by themselves, and the reverse. The rule that
+does not go wrong: the laptop is the real one for the examination itself, and
+the website stays the real one for the term's records. **Administration ▸
+Results transfer** then carries the examination back without touching
+anything else — see *Carrying the results back*, below. Set that page up on
+both machines now, while you have time, rather than on the day.
 
 ### 4. Set the room's wifi up
 
@@ -580,7 +583,65 @@ end an abandoned attempt, and shows you who has finished.
 
 **Administration ▸ System check ▸ Backup**, download the file, and copy it
 somewhere that is not the laptop. The marks exist in one place until you do.
-Restore it to PythonAnywhere if that is where you keep the term's records.
+Then carry them to the website as described next — but back up first, because
+a backup is the only thing that survives the laptop being dropped.
+
+## Carrying the results back
+
+The examination leaves the papers, the marking and anything you typed into
+the gradebook on the laptop. **Administration ▸ Results transfer** moves them
+into the website.
+
+It is not a restore. A restore replaces the whole database and destroys
+whatever was entered on the website in the meantime; this moves only what the
+examination produced, and merges it.
+
+### Setting it up (once, on both machines)
+
+1. On the **website**, open the page, press **Generate a token**, copy it, and
+   leave the address blank. A copy with no address is the one that receives.
+2. On the **laptop**, open the same page, paste the website's address
+   (`https://bertoy.pythonanywhere.com`) and the **same token**, and save.
+3. Tick **Send automatically when the laptop is online** if you want it to go
+   by itself.
+
+The token can write marks into your gradebook, so treat it as a password.
+
+### On the day
+
+If the laptop has no internet in the room — which is the point of the
+room's own network — nothing is sent during the examination. Afterwards,
+either rejoin a wifi with internet and the laptop sends within a few minutes,
+or press **Send to the main portal** yourself. If the laptop will never have
+internet, press **Download as a file**, carry it on a USB stick, and use
+**Merge a results file** on the website.
+
+Sending twice does the same as sending once, so retrying after a dropped
+connection is safe.
+
+### What it will and will not do
+
+The laptop is treated as authoritative for what happened during the
+examination, and for nothing else. **Nothing is ever deleted.**
+
+* A student already on the website **keeps their name and password**. Only a
+  student who is not there at all is created — the one who enrolled late in
+  the room.
+* An attempt **already submitted on the website is left alone** and reported,
+  because you may have marked an essay or adjusted a score there since. An
+  attempt still in progress there is replaced by the finished one.
+* A gradebook mark is written **only if it is newer** than the one on the
+  website, or if there is none.
+* **Final grades are never sent.** Finalising a subject is deliberate and
+  belongs where the records are kept.
+* The subject and the examination **must already exist on both sides** with
+  the same code, term and title, and the paper must have the same number of
+  questions. Anything that cannot be matched is reported rather than guessed
+  at — read the notes on the page after a transfer.
+
+The two databases number their rows independently, so nothing is matched on
+an id: a student by student number, a subject by code and term, an exam by
+its title, an answer by the question's position on the paper.
 
 ### What can still go wrong
 
