@@ -1899,3 +1899,37 @@ body.exam-running .exam-bar { position: relative; z-index: 41; }
 .ai-action[disabled]:hover { border-color: var(--line); background: var(--raised); }
 .ai-ask textarea[disabled] { background: var(--line-soft); color: var(--ink-faint); }
 .ai-ask .button[disabled] { opacity: 0.5; }
+
+/* Marking a student's activities from their own page.
+   The box is sized for a mark (three or four characters), not for prose, so
+   a column of them reads as a column of numbers rather than a form. */
+.mark-box {
+  width: 4.6rem; text-align: right; font-variant-numeric: tabular-nums;
+  padding: 0.3rem 0.4rem; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); background: var(--paper); color: var(--ink);
+  font: 600 0.88rem/1.2 var(--font);
+}
+.mark-box:focus { outline: 2px solid var(--navy-500); outline-offset: 1px; }
+.mark-box.is-blank { background: var(--line-soft); }
+.mark-box[readonly] {
+  background: var(--amber-100); color: var(--amber-600); cursor: not-allowed;
+}
+.note-box {
+  width: 100%; min-width: 7rem; padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--paper); color: var(--ink); font: 400 0.8rem/1.3 var(--font);
+}
+
+.mark-bar {
+  position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 0.7rem 1rem; margin: 1rem 0;
+  background: var(--raised); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+}
+@media print { .mark-bar { display: none; } }
+
+/* `input[type="text"]` above sets width:100% and outranks a bare class, which
+   is why these are scoped to the table the way .cell-input already is. */
+table.data .mark-box { width: 4.8rem; }
+table.data .note-box { width: 100%; min-width: 6rem; }

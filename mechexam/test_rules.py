@@ -2819,6 +2819,161 @@ def test_incomplete_upgrade():
               response.status_code in (302, 200), str(response.status_code))
 
 
+def test_marking_from_the_profile():
+    """Every activity for one student, marked from that student's page.
+
+    The activity page marks one activity across the class; this is the other
+    axis. The rules have to be identical on both, because a gradebook where
+    a blank means "nothing" on one screen and "not yet" on another is worse
+    than one with no shortcut at all.
+    """
+    teacher = make_instructor("prof-teacher")
+    other = make_instructor("prof-other")
+    course = make_course("TEST-PROFILE", teacher, laboratory=True)
+    student = make_student("PF-0001")
+    classmate = make_student("PF-0002")
+    for person in (student, classmate):
+        db.session.add(Enrollment(course_id=course.id, student_id=person.id))
+
+    quiz = add_item(course, SCOPE_LECTURE, "Written Works", "Quiz 1", 50.0)
+    seatwork = add_item(course, SCOPE_LECTURE, "Written Works", "Seatwork 1", 20.0)
+    lab = add_item(course, SCOPE_LABORATORY, "Performance Task",
+                   "Experiment 1", 100.0)
+    db.session.commit()
+
+    url = f"/gradebook/{course.id}/student/{student.id}"
+
+    with signed_in("prof-teacher", "pw-prof-teacher") as client:
+        body = client.get(url).get_data(as_text=True)
+        check("the student's page offers a box for each activity",
+              f'name="mark_{quiz.id}"' in body
+              and f'name="mark_{seatwork.id}"' in body)
+        check("including laboratory activities",
+              f'name="mark_{lab.id}"' in body)
+        check("and a remark beside each one",
+              f'name="note_{quiz.id}"' in body)
+
+        # ---- marking several activities in one pass --------------------- #
+        client.post(url, data={
+            f"mark_{quiz.id}": "41", f"note_{quiz.id}": "",
+            f"mark_{seatwork.id}": "17", f"note_{seatwork.id}": "late",
+            f"mark_{lab.id}": "88", f"note_{lab.id}": "",
+        }, follow_redirects=True)
+
+    def mark_for(item):
+        return Score.query.filter_by(item_id=item.id,
+                                     student_id=student.id).first()
+
+    check("a lecture mark is saved", near(mark_for(quiz).points, 41.0),
+          str(mark_for(quiz).points if mark_for(quiz) else None))
+    check("a second one in the same pass is too",
+          near(mark_for(seatwork).points, 17.0))
+    check("and a laboratory mark as well", near(mark_for(lab).points, 88.0))
+    check("the remark is kept with the mark",
+          mark_for(seatwork).remarks == "late", mark_for(seatwork).remarks)
+    check("and who entered it is recorded",
+          mark_for(quiz).graded_by_id == teacher.id)
+    check("no other student was touched",
+          Score.query.filter_by(item_id=quiz.id,
+                                student_id=classmate.id).first() is None)
+
+    result = compute_student(course, student)
+    check("the standing recomputes from marks typed here",
+          result.lecture.percent is not None and result.lecture.percent > 0,
+          str(result.lecture.percent))
+
+    # ---- a blank clears; it does not record a zero ---------------------- #
+    with signed_in("prof-teacher", "pw-prof-teacher") as client:
+        client.post(url, data={f"mark_{quiz.id}": "", f"note_{quiz.id}": ""},
+                    follow_redirects=True)
+    cleared = mark_for(quiz)
+    check("a blank box clears the mark", cleared.points is None,
+          str(cleared.points))
+    check("and clearing is not the same as a zero",
+          cleared.points is not None or cleared.points != 0.0)
+    check("activities left out of the form are untouched",
+          near(mark_for(seatwork).points, 17.0))
+
+    # ---- the same refusals as the activity page ------------------------- #
+    with signed_in("prof-teacher", "pw-prof-teacher") as client:
+        for bad, why in [("51", "above the maximum"),
+                         ("-3", "negative"),
+                         ("nineteen", "not a number")]:
+            body = client.post(url, data={f"mark_{quiz.id}": bad},
+                               follow_redirects=True).get_data(as_text=True)
+            check(f"“{bad}” is refused ({why})", "Not saved" in body,
+                  body[:160])
+            check(f"and “{bad}” is not stored", mark_for(quiz).points is None,
+                  str(mark_for(quiz).points))
+
+        # 50 of 50 is the maximum, not above it.
+        client.post(url, data={f"mark_{quiz.id}": "50"}, follow_redirects=True)
+        check("full marks are accepted", near(mark_for(quiz).points, 50.0))
+        client.post(url, data={f"mark_{quiz.id}": "0"}, follow_redirects=True)
+        check("and a real zero can still be typed",
+              mark_for(quiz).points == 0.0, str(mark_for(quiz).points))
+
+    # ---- an override is not collateral damage --------------------------- #
+    override = mark_for(seatwork)
+    override.is_override = True
+    override.override_note = "Dean's excuse — credited in full"
+    override.points = 20.0
+    db.session.commit()
+
+    with signed_in("prof-teacher", "pw-prof-teacher") as client:
+        body = client.get(url).get_data(as_text=True)
+        check("an overridden mark is shown but not editable here",
+              f'name="mark_{seatwork.id}"' in body and "readonly" in body)
+        client.post(url, data={
+            f"mark_{quiz.id}": "45",
+            f"mark_{seatwork.id}": "1", f"note_{seatwork.id}": "wiped",
+        }, follow_redirects=True)
+
+    kept = mark_for(seatwork)
+    check("saving another row leaves the override's mark alone",
+          near(kept.points, 20.0), str(kept.points))
+    check("and its reason survives", kept.is_override
+          and "Dean's excuse" in (kept.override_note or ""),
+          str(kept.override_note))
+    check("while the ordinary row beside it did save",
+          near(mark_for(quiz).points, 45.0))
+
+    # ---- who may mark --------------------------------------------------- #
+    with signed_in("prof-other", "pw-prof-other") as client:
+        response = client.get(url, follow_redirects=False)
+        check("another instructor cannot even open the page",
+              response.status_code == 404, str(response.status_code))
+        response = client.post(url, data={f"mark_{quiz.id}": "99"},
+                               follow_redirects=False)
+        check("and certainly cannot mark through it",
+              response.status_code == 404, str(response.status_code))
+    check("their attempt changed nothing", near(mark_for(quiz).points, 45.0))
+
+    with signed_in("PF-0001", "PF-0001") as client:
+        response = client.post(url, data={f"mark_{quiz.id}": "50"},
+                               follow_redirects=False)
+        check("a student cannot mark themselves",
+              response.status_code in (302, 303, 403, 404),
+              str(response.status_code))
+    check("and their own mark is unchanged", near(mark_for(quiz).points, 45.0))
+
+    # ---- the two screens must agree ------------------------------------- #
+    from app.blueprints.gradebook import _read_mark
+
+    check("the shared validator clears on blank",
+          _read_mark("", quiz, "x")[0] == "clear")
+    check("rejects what is not a number",
+          _read_mark("abc", quiz, "x")[0] == "reject")
+    check("rejects a negative mark",
+          _read_mark("-1", quiz, "x")[0] == "reject")
+    check("rejects above the maximum",
+          _read_mark("50.1", quiz, "x")[0] == "reject")
+    check("accepts the maximum exactly",
+          _read_mark("50", quiz, "x")[:2] == ("set", 50.0))
+    check("and accepts a decimal mark",
+          _read_mark(" 37.5 ", quiz, "x")[:2] == ("set", 37.5))
+
+
 def test_ai_pane():
     """The pane sees the page it is on — and nothing it has no business with.
 
@@ -3614,6 +3769,7 @@ def main():
         ("Screen capture measures", test_screen_capture_measures),
         ("Local-network restriction", test_network_restriction),
         ("A half-finished upgrade", test_incomplete_upgrade),
+        ("Marking from a student's page", test_marking_from_the_profile),
         ("The assistant pane", test_ai_pane),
         ("Carrying results back from a laptop", test_results_transfer),
         ("Grade release gate", test_grade_release),

@@ -74,6 +74,25 @@
 </div>
 {% endif %}
 
+{% if may_mark %}
+<form method="post" id="mark-form">
+{% endif %}
+
+{% if may_mark and course.is_finalised %}
+<div class="callout callout-warning">
+  <span class="glyph" aria-hidden="true">&#9888;</span>
+  <div class="grow">
+    <p class="mb0">
+      This subject is <strong>finalised</strong>. You can still correct a mark
+      here, but the recorded final grade will not move until the subject is
+      reopened on the
+      <a href="{{ url_for('gradebook.finalise', course_id=course.id) }}">finalise
+      page</a>.
+    </p>
+  </div>
+</div>
+{% endif %}
+
 {% for scope in [result.lecture, result.laboratory] %}
   {% if scope %}
   <div class="card">
@@ -105,7 +124,18 @@
                     <a href="{{ url_for('gradebook.item', item_id=entry.item.id) }}">{{ entry.item.title }}</a>
                     <span class="pill tiny">{{ entry.item.type_label }}</span>
                   </td>
-                  <td class="num">{{ entry.display }}</td>
+                  <td class="num">
+                    {% if may_mark %}
+                      <input type="text" inputmode="decimal"
+                             class="mark-box {{ 'is-blank' if entry.points is none }}"
+                             name="mark_{{ entry.item.id }}"
+                             value="{{ entry.points|num if entry.points is not none else '' }}"
+                             aria-label="Mark for {{ entry.item.title }}, out of {{ entry.max_points|num }}"
+                             {% if entry.is_override %}readonly
+                             title="This mark was overridden. Change it on the activity page, where the reason is recorded."{% endif %}>
+                      {% if entry.is_override %}<span class="tiny muted">override</span>{% endif %}
+                    {% else %}{{ entry.display }}{% endif %}
+                  </td>
                   <td class="num">{{ entry.max_points|num }}</td>
                   <td class="num">
                     {% if entry.percent is not none %}
@@ -114,7 +144,14 @@
                       </span>
                     {% else %}—{% endif %}
                   </td>
-                  <td class="small">{{ entry.remarks or '—' }}</td>
+                  <td class="small">
+                    {% if may_mark and not entry.is_override %}
+                      <input type="text" class="note-box"
+                             name="note_{{ entry.item.id }}"
+                             value="{{ entry.remarks or '' }}"
+                             aria-label="Remark for {{ entry.item.title }}">
+                    {% else %}{{ entry.remarks or '—' }}{% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
                 <tr>
@@ -148,6 +185,19 @@
   </div>
   {% endif %}
 {% endfor %}
+
+{% if may_mark %}
+<div class="mark-bar">
+  <div class="grow small">
+    <strong>Marking {{ student.display_name }}.</strong>
+    Type a mark against any activity and save. <strong>A blank box clears the
+    mark</strong> — it does not record a zero, so "not yet" stays different
+    from "nothing".
+  </div>
+  <button type="submit" class="button button-primary">Save marks</button>
+</div>
+</form>
+{% endif %}
 
 {% if result.laboratory and result.laboratory.percent is not none and result.lecture.percent is not none %}
 <div class="card">

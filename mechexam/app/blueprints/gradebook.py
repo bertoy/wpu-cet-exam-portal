@@ -46,7 +46,12 @@ from ..models import (
     User,
     log_action,
 )
-from ..security import require_course, staff_required, visible_courses
+from ..security import (
+    may_manage_course,
+    require_course,
+    staff_required,
+    visible_courses,
+)
 
 bp = Blueprint("gradebook", __name__)
 
@@ -322,6 +327,37 @@ def item(item_id: int):
     )
 
 
+def _read_mark(raw: str, item_row: GradeItem, who: str):
+    """Turn what was typed into a mark, or into a reason it is not one.
+
+    Returns ``(action, value, problem)`` where action is "clear", "set" or
+    "reject".
+
+    Both the activity page (one activity, every student) and the student's
+    own page (one student, every activity) enter marks, and the rules have to
+    be the same on both or the gradebook means different things depending on
+    which screen the mark was typed into. They are written once, here.
+
+    Blank clears the mark rather than recording a zero: a gradebook in
+    progress must be able to say "not yet" as distinct from "nothing".
+    """
+    raw = (raw or "").strip()
+    if raw == "":
+        return "clear", None, None
+
+    try:
+        points = float(raw)
+    except ValueError:
+        return "reject", None, f"{who}: “{raw}” is not a number"
+
+    if points < 0:
+        return "reject", None, f"{who}: a mark cannot be negative"
+    if item_row.max_points and points > item_row.max_points:
+        return "reject", None, (f"{who}: {points:g} is above the maximum of "
+                                f"{item_row.max_points:g}")
+    return "set", points, None
+
+
 def _save_scores(item_row: GradeItem, course_row: Course, section_id):
     changed = 0
     problems: list[str] = []
@@ -334,31 +370,18 @@ def _save_scores(item_row: GradeItem, course_row: Course, section_id):
         if field not in request.form:
             continue
 
-        raw = (request.form.get(field) or "").strip()
         row = existing.get(student.id)
+        action, points, problem = _read_mark(
+            request.form.get(field), item_row, student.display_name
+        )
 
-        if raw == "":
-            # Blank clears the mark rather than recording a zero, so an
-            # in-progress gradebook stays honest.
+        if action == "reject":
+            problems.append(problem)
+            continue
+        if action == "clear":
             if row is not None and row.points is not None:
                 row.points = None
                 changed += 1
-            continue
-
-        try:
-            points = float(raw)
-        except ValueError:
-            problems.append(f"{student.display_name}: “{raw}” is not a number")
-            continue
-
-        if points < 0:
-            problems.append(f"{student.display_name}: a mark cannot be negative")
-            continue
-        if item_row.max_points and points > item_row.max_points:
-            problems.append(
-                f"{student.display_name}: {points:g} is above the maximum of "
-                f"{item_row.max_points:g}"
-            )
             continue
 
         if row is None:
@@ -766,15 +789,114 @@ def reopen(course_id: int):
 # One student
 # --------------------------------------------------------------------------- #
 
-@bp.route("/<int:course_id>/student/<int:student_id>")
+@bp.route("/<int:course_id>/student/<int:student_id>",
+          methods=["GET", "POST"])
 @staff_required
 def student_detail(course_id: int, student_id: int):
+    """One student's page — and, for whoever teaches the subject, the place
+    to mark every one of that student's activities without leaving it.
+
+    The activity page marks one activity for the whole class, which is what
+    you want after a quiz. This is the other axis: a student who was absent
+    for four things and has come to make them up is marked here, in one pass,
+    rather than by opening four pages.
+    """
     course_row = require_course(course_id, manage=False)
     student = User.query.get_or_404(student_id)
+    may_mark = may_manage_course(course_row)
+
+    if request.method == "POST":
+        if not may_mark:
+            abort(404)
+        return _save_student_marks(course_row, student)
+
     result = compute_student(course_row, student)
     return render_template(
-        "gradebook/student.html", course=course_row, student=student, result=result
+        "gradebook/student.html", course=course_row, student=student,
+        result=result, may_mark=may_mark,
     )
+
+
+def _save_student_marks(course_row: Course, student: User):
+    """Every activity for one student, in one go.
+
+    Deliberately narrower than the activity page: this writes the mark and
+    the remark and nothing else. An override carries a note and a decision
+    behind it, so it is left exactly as it was found rather than being
+    cleared as a side effect of saving a different row.
+    """
+    changed = 0
+    problems: list[str] = []
+
+    items = {
+        item_row.id: item_row
+        for component in course_row.components
+        for item_row in component.items
+    }
+    existing = {
+        row.item_id: row
+        for row in Score.query.filter(
+            Score.item_id.in_(items.keys()), Score.student_id == student.id
+        ).all()
+    } if items else {}
+
+    for item_id, item_row in items.items():
+        field = f"mark_{item_id}"
+        if field not in request.form:
+            continue
+
+        row = existing.get(item_id)
+
+        # An override carries a reason and a decision behind it. The page
+        # shows it read-only, but `readonly` is a courtesy to the browser and
+        # not a rule, so the rule is here: an overridden mark is changed on
+        # the activity page, where the note is recorded, or not at all.
+        if row is not None and row.is_override:
+            continue
+
+        action, points, problem = _read_mark(
+            request.form.get(field), item_row, item_row.title
+        )
+
+        if action == "reject":
+            problems.append(problem)
+            continue
+
+        remarks = (request.form.get(f"note_{item_id}") or "").strip()
+
+        if action == "clear":
+            if row is not None and (row.points is not None
+                                    or (row.remarks or "") != remarks):
+                row.points = None
+                row.remarks = remarks
+                changed += 1
+            continue
+
+        if row is None:
+            row = Score(item_id=item_id, student_id=student.id)
+            db.session.add(row)
+
+        if row.points != points or (row.remarks or "") != remarks:
+            changed += 1
+        row.points = points
+        row.remarks = remarks
+        row.graded_by_id = current_user.id
+
+    log_action(
+        current_user, "scores_saved", "course", course_row.id,
+        f"{student.display_name}: {changed} changed",
+    )
+    db.session.commit()
+
+    if changed:
+        flash(f"Saved {changed} mark(s) for {student.display_name}.", "success")
+    else:
+        flash("No marks changed.", "info")
+    if problems:
+        flash("Not saved: " + "; ".join(problems[:6]), "error")
+
+    return redirect(url_for("gradebook.student_detail",
+                            course_id=course_row.id, student_id=student.id))
 
 
 # --------------------------------------------------------------------------- #

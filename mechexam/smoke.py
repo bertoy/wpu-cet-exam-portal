@@ -628,6 +628,16 @@ def post_checks():
             problems.append(("POST scores", response.status_code,
                              _describe(response.get_data(as_text=True))))
 
+        # Marking one student's activities from their own page.
+        response = client.post(
+            f"/gradebook/{course_id}/student/{students[0]}",
+            data={f"mark_{item_id}": "18", f"note_{item_id}": "made up late"},
+            follow_redirects=True,
+        )
+        if response.status_code >= 500:
+            problems.append(("POST student marks", response.status_code,
+                             _describe(response.get_data(as_text=True))))
+
         # An out-of-range mark must be refused, not stored.
         response = client.post(f"/gradebook/item/{item_id}",
                                data={f"score_{students[0]}": "9999"},

@@ -370,6 +370,21 @@ is not on the outbound allow-list; the $10 Developer plan lifts that.
   67% lecture plus 33% laboratory. Laboratory can be switched on per subject
   and every weight is editable.
 * Transmutation from 95.60 = 1.00 down to 60.00 = 3.00, below that 5.00.
+* **Marks can be entered two ways, and they obey the same rules.** The
+  activity page marks one activity across the whole class, which is what you
+  want after a quiz. **A student's own page marks every one of that student's
+  activities in one pass**, which is what you want when someone comes to make
+  up four things they missed. Open a student from the gradebook, type into
+  the Score column, and save.
+  * A **blank box clears the mark**; it does not record a zero. "Not yet" has
+    to stay different from "nothing", or an in-progress gradebook lies.
+  * The refusals are identical on both screens — nothing above the maximum,
+    nothing negative, nothing that is not a number — because they are written
+    once and shared. A gradebook where a rule depends on which screen the
+    mark was typed into is worse than one with no shortcut at all.
+  * **An overridden mark is shown but not editable there.** An override
+    carries a recorded reason, so it is changed on the activity page or not
+    at all. The server enforces this, not just the form.
 * **The lecture and laboratory split belongs to each subject**, not to the
   portal, because no two subjects divide the same way. Set it on the subject
   with the common splits as presets; the figures are read as a ratio, so 70
