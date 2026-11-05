@@ -665,6 +665,19 @@ placeholder="2023-0001, Dela Cruz, Juan P., BSME, 4th Year
           </div>
         </div>
 
+        <label class="check">
+          <input type="checkbox" name="count_blanks_as_zero" value="1"
+                 {{ 'checked' if course.count_blanks_as_zero }}>
+          <span>Count an unmarked activity as zero
+            <span class="check-note">
+              The honest reading once the term is over: an activity that was
+              set and never done is a zero, not something to leave out of the
+              average. <strong>Switch it off while the term is running</strong>
+              if you create activities in advance — until they are marked they
+              will drag every standing down.
+            </span></span>
+        </label>
+
         <div class="field">
           <label for="incomplete_blank_limit">
             Performance tasks a student may leave unmarked

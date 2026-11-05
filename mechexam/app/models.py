@@ -327,6 +327,12 @@ class Course(db.Model):
     # subject is treated as incomplete at finalisation. Two by college
     # practice; a subject with only three tasks all term may want fewer.
     incomplete_blank_limit = db.Column(db.Integer, nullable=False, default=2)
+
+    # An activity with no mark counts as zero in the standing, rather than
+    # being left out of the average. The honest reading once the term is
+    # over; during the term it makes an activity created in advance drag
+    # everyone down, which is what the switch is for.
+    count_blanks_as_zero = db.Column(db.Boolean, nullable=False, default=True)
     is_finalised = db.Column(db.Boolean, nullable=False, default=False)
     finalised_at = db.Column(db.DateTime)
     removal_open = db.Column(db.Boolean, nullable=False, default=False)

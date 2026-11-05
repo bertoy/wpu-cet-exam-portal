@@ -370,6 +370,19 @@ is not on the outbound allow-list; the $10 Developer plan lifts that.
   67% lecture plus 33% laboratory. Laboratory can be switched on per subject
   and every weight is editable.
 * Transmutation from 95.60 = 1.00 down to 60.00 = 3.00, below that 5.00.
+* **An unmarked activity counts as zero in the standing** — the honest
+  reading of a finished term, since leaving it out averages a student over
+  the half of the subject they chose to do. A student with no major
+  examination goes from 89.47 to 59.61.
+  * **Switch it off while the term is running** if you create activities in
+    advance: until they are marked they drag every standing down. The switch
+    is on the subject, *Count an unmarked activity as zero*, and it is on by
+    default.
+  * It applies to every blank, including a student inside the blank limit —
+    two unmarked plates are two zeros, not two activities ignored.
+  * **A student nobody has marked yet is still INC, never 5.00.** Nothing
+    assessed is an absence of evidence, not a failure, and counting zeros
+    must not turn an empty gradebook into a class of failures.
 * **A removal candidate is shown a marker, not 5.00.** A standing in the
   removal band is not a failure yet — it is a 5.00 the student is entitled to
   remove — so they are shown **REM** (with the remark *Removal*) rather than

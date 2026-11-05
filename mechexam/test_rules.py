@@ -342,6 +342,14 @@ def test_laboratory_split():
 # --------------------------------------------------------------------------- #
 
 def test_blank_is_not_zero():
+    """What an unmarked activity is worth — which the subject decides.
+
+    Counting it as zero is the honest reading of a finished term: leaving it
+    out averages a student over the half of the subject they chose to do.
+    Leaving it out is the honest reading of a term still running, where an
+    activity set in advance has simply not happened yet. Both are right at
+    different moments, so it is a switch, and both are tested here.
+    """
     teacher = make_instructor("blank-teacher")
     course = make_course("TEST-BLANK", teacher)
     student = make_student("T-0003")
@@ -353,23 +361,64 @@ def test_blank_is_not_zero():
     set_score(one, student, 80)
     db.session.commit()
 
+    # ---- counting them, which is the default --------------------------- #
+    check("a subject counts blanks as zero unless told otherwise",
+          course.count_blanks_as_zero is True)
+
     result = compute_student(course, student)
-    check("an unmarked activity is ignored, not counted as zero",
+    check("an unmarked activity is counted as zero",
+          near(result.lecture.components[0].raw_percent, 40.0),
+          f"got {result.lecture.components[0].raw_percent}")
+    check("and it is reported as blank, not merely averaged away",
+          result.lecture.components[0].blank_items == 1,
+          str(result.lecture.components[0].blank_items))
+    check("so 80 on one of two quizzes is 40%, not 80%",
+          near(result.lecture.percent, 40.0), f"got {result.lecture.percent}")
+
+    # ---- not counting them ---------------------------------------------- #
+    course.count_blanks_as_zero = False
+    db.session.commit()
+
+    result = compute_student(course, student)
+    check("switched off, an unmarked activity is ignored instead",
           near(result.lecture.components[0].raw_percent, 80.0),
           f"got {result.lecture.components[0].raw_percent}")
-
-    # Only Written Works has data, so the standing rescales to that weight.
-    check("standing rescales to the weight that has marks",
+    check("and the standing rescales to the weight that has marks",
           near(result.lecture.percent, 80.0), f"got {result.lecture.percent}")
 
-    # A student with nothing at all is Incomplete, not failed.
+    # ---- a student nobody has marked yet -------------------------------- #
     bare = make_student("T-0004")
     db.session.add(Enrollment(course_id=course.id, student_id=bare.id))
     db.session.commit()
+
     result = compute_student(course, bare)
-    check("a student with no marks is Incomplete, not failed",
-          result.remark == "Incomplete" and result.grade == "INC",
-          f"{result.grade} / {result.remark}")
+    check("with blanks ignored, a student with no marks has no standing",
+          result.final_percent is None, str(result.final_percent))
+    check("and is Incomplete, not failed",
+          result.effective_remark == "Incomplete"
+          and result.effective_grade == "INC",
+          f"{result.effective_grade} / {result.effective_remark}")
+
+    course.count_blanks_as_zero = True
+    db.session.commit()
+
+    result = compute_student(course, bare)
+    check("with blanks counted, that student computes to zero",
+          near(result.final_percent, 0.0), str(result.final_percent))
+    check("but is STILL Incomplete rather than 5.00",
+          result.effective_grade == "INC",
+          f"{result.effective_grade} / {result.effective_remark}")
+    check("because nothing assessed is an absence of evidence, not a failure",
+          result.completion.nothing_marked, result.completion.summary)
+    check("while the computed grade underneath is the honest 5.00",
+          result.grade == "5.00", result.grade)
+
+    # One mark is enough to stop it being "nothing marked".
+    set_score(one, bare, 10)
+    db.session.commit()
+    result = compute_student(course, bare)
+    check("one mark and it is no longer nothing-marked",
+          not result.completion.nothing_marked)
 
 
 # --------------------------------------------------------------------------- #
@@ -456,7 +505,10 @@ def test_removal_edge_cases():
         return student
 
     full = [(quiz, 57.0), (major, 57.0)] + [(t, 57.0) for t in tasks]
-    sat_with_blanks = make("RE-0001", [(quiz, 57.0), (major, 57.0)],
+    # Blanks count as zero, so to be IN the removal band while also having
+    # three plates outstanding this student has to be strong on everything
+    # else: 0.2(95) + 0.4(0) + 0.4(95) = 57.0.
+    sat_with_blanks = make("RE-0001", [(quiz, 95.0), (major, 95.0)],
                            removal_mark=80.0)
     not_sat = make("RE-0002", full)
     sat_and_passed = make("RE-0003", full, removal_mark=75.0)
@@ -3034,10 +3086,28 @@ def test_incomplete_rules():
     result = look(no_exam)
     check("a student who sat no major examination is flagged",
           result.completion.missing_major)
-    check("they would otherwise have come out passing — the actual hole",
-          result.is_passing, f"{result.final_percent} {result.grade}")
     check("and they are INC, because the exams could still carry them",
           result.completion.is_incomplete)
+
+    # The hole this rule exists for. With blanks counted as zero the missing
+    # examinations drag the standing down on their own, so switch that off
+    # and the old arithmetic comes back: the empty component is rescaled out
+    # of the weighting and the student sails through on quizzes alone. The
+    # INC rule has to stand up without the zeros, because a subject may have
+    # them switched off while the term runs.
+    course.count_blanks_as_zero = False
+    db.session.commit()
+    without_zeros = look(no_exam)
+    check("with blanks ignored, no major examination still reads as passing",
+          without_zeros.is_passing,
+          f"{without_zeros.final_percent} {without_zeros.grade}")
+    check("so the INC rule is what catches it, not the zeros",
+          without_zeros.completion.is_incomplete
+          and without_zeros.effective_grade == INCOMPLETE_GRADE,
+          without_zeros.effective_grade)
+    course.count_blanks_as_zero = True
+    db.session.commit()
+    result = look(no_exam)
 
     sat_one = enrol("INC-0006")
     give(sat_one, [(t, 90.0) for t in tasks] + [(t, 90.0) for t in lab_tasks]
@@ -3103,8 +3173,9 @@ def test_incomplete_rules():
           live.effective_grade == INCOMPLETE_GRADE, live.effective_grade)
     check("and the remark with it",
           live.effective_remark == REMARK_INCOMPLETE, live.effective_remark)
-    check("but the computed grade underneath is kept intact",
-          live.grade not in (INCOMPLETE_GRADE, FAILING_GRADE), live.grade)
+    check("but the computed grade underneath is the plain transmutation",
+          live.grade == transmute(live.final_percent),
+          f"{live.grade} vs {live.final_percent}")
     check("because finalising and the removal rules need the real figure",
           live.final_percent is not None)
 

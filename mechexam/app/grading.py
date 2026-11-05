@@ -122,6 +122,7 @@ class ComponentResult:
     earned: float = 0.0
     possible: float = 0.0
     counted_items: int = 0
+    blank_items: int = 0
 
     @property
     def name(self) -> str:
@@ -236,6 +237,7 @@ def compute_component(
     scores: dict,
     method: str,
     section_id: int | None = None,
+    blanks_as_zero: bool = False,
 ) -> ComponentResult:
     """One component's percentage for one student.
 
@@ -287,9 +289,23 @@ def compute_component(
             )
         )
 
-        # Un-entered scores are ignored rather than counted as zero, so a
-        # gradebook in progress shows an honest running percentage.
-        if points is None or max_points <= 0:
+        if max_points <= 0:
+            continue
+
+        if points is None:
+            # An activity that was set and never marked. Counting it as zero
+            # is the honest reading of a finished term: leaving it out
+            # averages a student over the half of the subject they chose to
+            # do, which is how somebody with no major examination came out
+            # passing. Counting it costs something during the term, though --
+            # an activity created in advance drags everyone down until it is
+            # marked -- so the subject can switch it off.
+            if not blanks_as_zero:
+                continue
+            result.counted_items += 1
+            result.blank_items += 1
+            result.possible += max_points * multiplier
+            percentages.append((0.0, multiplier))
             continue
 
         result.counted_items += 1
@@ -332,6 +348,7 @@ class CompletionCheck:
     limit: int = 2
     blank_performance: list = field(default_factory=list)
     missing_major: bool = False
+    nothing_marked: bool = False
     best_percent: float | None = None
     can_still_pass: bool = False
 
@@ -342,7 +359,8 @@ class CompletionCheck:
     @property
     def is_lacking(self) -> bool:
         """Work is outstanding, whatever grade that ends up producing."""
-        return self.too_many_blanks or self.missing_major
+        return (self.too_many_blanks or self.missing_major
+                or self.nothing_marked)
 
     @property
     def is_incomplete(self) -> bool:
@@ -357,6 +375,8 @@ class CompletionCheck:
     @property
     def reasons(self) -> list[str]:
         out = []
+        if self.nothing_marked:
+            return ["nothing has been marked yet"]
         if self.too_many_blanks:
             out.append(
                 f"{len(self.blank_performance)} performance task(s) with no "
@@ -393,20 +413,27 @@ def _combine_scopes(course: Course, lecture_percent, laboratory_percent):
 
 
 def _best_case_component(computed: "ComponentResult", method: str) -> float | None:
-    """What this component would come to with full marks on every blank."""
-    earned, possible = computed.earned, computed.possible
+    """What this component would come to with full marks on every blank.
+
+    Built from the entries alone rather than from ``earned``/``possible``,
+    because those two now mean different things depending on whether the
+    subject counts blanks as zero — and the best case is the same question
+    either way: everything marked, nothing missing.
+    """
+    earned = possible = 0.0
     percentages: list[tuple[float, float]] = []
 
     for entry in computed.entries:
+        if entry.max_points <= 0:
+            continue
         multiplier = entry.item.weight_multiplier
         if multiplier is None:
             multiplier = 1.0
-        if entry.points is None:
-            earned += entry.max_points * multiplier
-            possible += entry.max_points * multiplier
-            percentages.append((100.0, multiplier))
-        elif entry.max_points > 0:
-            percentages.append((entry.percent or 0.0, multiplier))
+        points = entry.max_points if entry.points is None else entry.points
+        earned += points * multiplier
+        possible += entry.max_points * multiplier
+        percentages.append((100.0 if entry.points is None
+                            else (entry.percent or 0.0), multiplier))
 
     if not percentages:
         return computed.raw_percent
@@ -439,6 +466,8 @@ def assess_completion(course: Course, result: "StudentResult") -> CompletionChec
 
     major_items = 0
     major_marked = 0
+    countable = 0
+    marked = 0
     best_by_scope = []
 
     for scope in scopes:
@@ -456,6 +485,10 @@ def assess_completion(course: Course, result: "StudentResult") -> CompletionChec
                 major_marked += sum(1 for entry in computed.entries
                                     if entry.points is not None)
 
+            countable += len(computed.entries)
+            marked += sum(1 for entry in computed.entries
+                          if entry.points is not None)
+
             best = _best_case_component(computed, method)
             best_components.append(
                 (best, computed.component.weight_percent or 0.0)
@@ -471,6 +504,10 @@ def assess_completion(course: Course, result: "StudentResult") -> CompletionChec
             best_by_scope.append(None)
 
     check.missing_major = major_items > 0 and major_marked == 0
+    # Counting blanks as zero would otherwise turn a student nobody has
+    # marked yet into a 5.00. Nothing assessed is not a failure; it is an
+    # absence of evidence, which is what INC is for.
+    check.nothing_marked = countable > 0 and marked == 0
 
     lecture_best = best_by_scope[0] if best_by_scope else None
     laboratory_best = best_by_scope[1] if len(best_by_scope) > 1 else None
@@ -491,6 +528,7 @@ def compute_scope(
     section_id: int | None = None,
 ) -> ScopeResult:
     method = course.averaging_method or "total_points"
+    blanks_as_zero = bool(course.count_blanks_as_zero)
     result = ScopeResult(scope=scope)
 
     components = [c for c in course.components if c.scope == scope]
@@ -498,7 +536,10 @@ def compute_scope(
 
     weight_with_data = 0.0
     for component in components:
-        computed = compute_component(component, student_id, scores, method, section_id)
+        computed = compute_component(
+            component, student_id, scores, method, section_id,
+            blanks_as_zero=blanks_as_zero,
+        )
         result.components.append(computed)
         result.weight_total += component.weight_percent or 0.0
         if computed.raw_percent is not None:

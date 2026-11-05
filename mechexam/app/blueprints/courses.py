@@ -180,6 +180,8 @@ def settings(course_id: int):
     course.removal_low = form.get("removal_low", type=float) or 55.0
     course.removal_high = form.get("removal_high", type=float) or 59.99
 
+    course.count_blanks_as_zero = bool(form.get("count_blanks_as_zero"))
+
     limit = form.get("incomplete_blank_limit", type=int)
     course.incomplete_blank_limit = max(0, limit) if limit is not None else 2
 
