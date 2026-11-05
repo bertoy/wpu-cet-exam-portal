@@ -318,6 +318,11 @@ class Course(db.Model):
     removal_high = db.Column(db.Float, default=59.99)
 
     grades_released = db.Column(db.Boolean, nullable=False, default=False)
+
+    # How many performance tasks a student may leave unmarked before the
+    # subject is treated as incomplete at finalisation. Two by college
+    # practice; a subject with only three tasks all term may want fewer.
+    incomplete_blank_limit = db.Column(db.Integer, nullable=False, default=2)
     is_finalised = db.Column(db.Boolean, nullable=False, default=False)
     finalised_at = db.Column(db.DateTime)
     removal_open = db.Column(db.Boolean, nullable=False, default=False)

@@ -200,6 +200,47 @@ def repair(app) -> dict:
     return report
 
 
+def backfill(app) -> list[str]:
+    """Fill in values that a plain ADD COLUMN default cannot work out.
+
+    `grade_component.kind` is the case that matters. Adding the column gives
+    every existing row the default, "written" -- so on a database that
+    predates it, Performance Task and Major Examinations would both be
+    labelled Written Works, and the completion rules at finalisation would
+    read a class as having no major examinations at all. The column's value
+    has to be derived from the name that is already there.
+
+    Runs on every boot and is safe to repeat: it only touches rows that still
+    look untouched.
+    """
+    done: list[str] = []
+    try:
+        from .models import GradeComponent
+
+        wrong = GradeComponent.query.filter(
+            (GradeComponent.kind.is_(None)) | (GradeComponent.kind == "written")
+        ).all()
+        changed = 0
+        for component in wrong:
+            name = (component.name or "").strip().lower()
+            if "performance" in name:
+                component.kind = "performance"
+            elif "major" in name or "examination" in name:
+                component.kind = "major"
+            elif component.kind is None:
+                component.kind = "written"
+            else:
+                continue
+            changed += 1
+        if changed:
+            db.session.commit()
+            done.append(f"grade_component.kind: {changed} row(s)")
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        log.warning("backfill skipped: %s", exc)
+    return done
+
+
 def initialise(app) -> dict:
     """Full boot sequence for the database, in the order that matters."""
     with app.app_context():
@@ -218,6 +259,8 @@ def initialise(app) -> dict:
         report["errors"] += follow_up["errors"]
         # 4. Indexes last, once every column exists.
         ensure_indexes(app)
+        # 4b. Values a new column cannot carry.
+        report["backfilled"] = backfill(app)
         # 5. Say what is still missing. Adding a column can fail quietly --
         #    a locked database while two workers start together -- and the
         #    application would then run against a schema it cannot query.

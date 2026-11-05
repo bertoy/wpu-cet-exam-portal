@@ -370,6 +370,25 @@ is not on the outbound allow-list; the $10 Developer plan lifts that.
   67% lecture plus 33% laboratory. Laboratory can be switched on per subject
   and every weight is editable.
 * Transmutation from 95.60 = 1.00 down to 60.00 = 3.00, below that 5.00.
+* **INC for work left undone, where finishing it could still pass.** A
+  component with no marks in it is rescaled out of the weighting, so without
+  this a student who never sat a major examination was graded on their
+  quizzes alone — and could come out passing. At finalisation a student is
+  recorded **INC** if they have more than the allowed number of unmarked
+  performance tasks (**two by default, set per subject**, counted across
+  lecture and laboratory together) **or sat no major examination at all**.
+  * **Only where it could still pass.** Full marks on everything outstanding
+    are assumed and the grade recomputed; if that still fails, the student is
+    recorded as failed, not INC. An incomplete grade that cannot become a
+    pass only postpones the news by a term.
+  * An activity that does not exist is nobody's fault: a subject with no
+    major examination entered yet does not put the whole class on INC.
+  * The computed standing is kept alongside the INC, so completing the work
+    after a reopen does not start from nothing.
+  * The gradebook flags **would be INC** against a student during the term,
+    so they can be chased while there is still time; the grade only changes
+    at finalisation, and the finalise page previews every case with its
+    reason and the best mark still reachable.
 * **Marks can be entered two ways, and they obey the same rules.** The
   activity page marks one activity across the whole class, which is what you
   want after a quiz. **A student's own page marks every one of that student's

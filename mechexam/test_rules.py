@@ -2819,6 +2819,277 @@ def test_incomplete_upgrade():
               response.status_code in (302, 200), str(response.status_code))
 
 
+def test_incomplete_rules():
+    """INC for work left undone — but only where finishing it could pass.
+
+    The hole this closes: a component with nothing in it is rescaled out of
+    the weighting, so a student who never sat a major examination was graded
+    on their quizzes alone and could come out passing.
+    """
+    from app.grading import (
+        FAILING_GRADE,
+        INCOMPLETE_GRADE,
+        REMARK_FAILED,
+        REMARK_INCOMPLETE,
+    )
+    from app.models import FinalGrade
+
+    teacher = make_instructor("inc-teacher")
+    course = make_course("TEST-INC", teacher, laboratory=True)
+
+    tasks = [add_item(course, SCOPE_LECTURE, "Performance Task",
+                      f"Task {n}", 100.0) for n in range(1, 5)]
+    lab_tasks = [add_item(course, SCOPE_LABORATORY, "Performance Task",
+                          f"Experiment {n}", 100.0) for n in range(1, 3)]
+    quiz = add_item(course, SCOPE_LECTURE, "Written Works", "Quiz 1", 100.0)
+    lab_quiz = add_item(course, SCOPE_LABORATORY, "Written Works",
+                        "Lab Quiz 1", 100.0)
+    midterm = add_item(course, SCOPE_LECTURE, "Major Examinations",
+                       "Midterm", 100.0)
+    finals = add_item(course, SCOPE_LECTURE, "Major Examinations",
+                      "Final Examination", 100.0)
+    lab_exam = add_item(course, SCOPE_LABORATORY, "Major Examinations",
+                        "Practical Examination", 100.0)
+    db.session.commit()
+
+    check("the default limit is two blanks",
+          course.incomplete_blank_limit == 2,
+          str(course.incomplete_blank_limit))
+
+    def enrol(username):
+        person = make_student(username)
+        db.session.add(Enrollment(course_id=course.id, student_id=person.id))
+        db.session.commit()
+        return person
+
+    def give(person, pairs):
+        for item, points in pairs:
+            db.session.add(Score(item_id=item.id, student_id=person.id,
+                                 points=points))
+        db.session.commit()
+
+    def look(person):
+        return compute_student(course, person)
+
+    # ---- a student who did everything ----------------------------------- #
+    complete = enrol("INC-0001")
+    give(complete, [(t, 85.0) for t in tasks] + [(t, 85.0) for t in lab_tasks]
+         + [(quiz, 85.0), (lab_quiz, 85.0), (midterm, 85.0),
+            (finals, 85.0), (lab_exam, 85.0)])
+    done = look(complete)
+    check("a student who did everything is not lacking anything",
+          not done.completion.is_lacking, done.completion.summary)
+    check("and is not INC", not done.completion.is_incomplete)
+
+    # ---- two blanks is allowed, three is not ----------------------------- #
+    two_blank = enrol("INC-0002")
+    give(two_blank, [(tasks[0], 85.0), (tasks[1], 85.0),
+                     (quiz, 85.0), (lab_quiz, 85.0),
+                     (lab_tasks[0], 85.0), (lab_tasks[1], 85.0),
+                     (midterm, 85.0), (finals, 85.0), (lab_exam, 85.0)])
+    result = look(two_blank)
+    check("exactly two blank performance tasks is within the limit",
+          len(result.completion.blank_performance) == 2
+          and not result.completion.too_many_blanks,
+          str(len(result.completion.blank_performance)))
+    check("so that student is not INC", not result.completion.is_lacking)
+
+    three_blank = enrol("INC-0003")
+    give(three_blank, [(tasks[0], 85.0), (quiz, 85.0), (lab_quiz, 85.0),
+                       (lab_tasks[0], 85.0), (lab_tasks[1], 85.0),
+                       (midterm, 85.0), (finals, 85.0), (lab_exam, 85.0)])
+    result = look(three_blank)
+    check("three blank performance tasks is past the limit",
+          result.completion.too_many_blanks,
+          str(len(result.completion.blank_performance)))
+    check("and with good marks elsewhere, finishing could still pass",
+          result.completion.can_still_pass
+          and result.completion.is_incomplete,
+          str(result.completion.best_percent))
+
+    # ---- lecture and laboratory are counted together --------------------- #
+    split_blank = enrol("INC-0004")
+    give(split_blank, [(tasks[0], 85.0), (tasks[1], 85.0),
+                       (quiz, 85.0), (lab_quiz, 85.0),
+                       (midterm, 85.0), (finals, 85.0), (lab_exam, 85.0)])
+    result = look(split_blank)
+    check("two blanks in lecture and two in laboratory counts as four",
+          len(result.completion.blank_performance) == 4,
+          str([i.title for i in result.completion.blank_performance]))
+    check("so counting them together catches what neither half would alone",
+          result.completion.is_incomplete)
+
+    # ---- no major examination at all ------------------------------------- #
+    no_exam = enrol("INC-0005")
+    give(no_exam, [(t, 90.0) for t in tasks] + [(t, 90.0) for t in lab_tasks]
+         + [(quiz, 90.0), (lab_quiz, 90.0)])
+    result = look(no_exam)
+    check("a student who sat no major examination is flagged",
+          result.completion.missing_major)
+    check("they would otherwise have come out passing — the actual hole",
+          result.is_passing, f"{result.final_percent} {result.grade}")
+    check("and they are INC, because the exams could still carry them",
+          result.completion.is_incomplete)
+
+    sat_one = enrol("INC-0006")
+    give(sat_one, [(t, 90.0) for t in tasks] + [(t, 90.0) for t in lab_tasks]
+         + [(quiz, 90.0), (lab_quiz, 90.0), (midterm, 90.0)])
+    check("sitting one major examination is enough to clear that rule",
+          not look(sat_one).completion.missing_major)
+
+    # ---- INC only where finishing could pass ----------------------------- #
+    hopeless = enrol("INC-0007")
+    give(hopeless, [(tasks[0], 5.0), (quiz, 5.0), (lab_quiz, 5.0),
+                    (lab_tasks[0], 5.0), (lab_tasks[1], 5.0),
+                    (midterm, 5.0), (finals, 5.0), (lab_exam, 5.0)])
+    result = look(hopeless)
+    check("a student with work outstanding but no route to a pass is lacking",
+          result.completion.is_lacking)
+    check("but is NOT incomplete", not result.completion.is_incomplete)
+    check("because full marks on everything left still fails",
+          result.completion.is_beyond_saving
+          and not result.completion.can_still_pass,
+          f"best {result.completion.best_percent}")
+
+    borderline = enrol("INC-0008")
+    give(borderline, [(tasks[0], 60.0), (quiz, 60.0), (lab_quiz, 60.0),
+                      (lab_tasks[0], 60.0), (lab_tasks[1], 60.0),
+                      (midterm, 60.0), (finals, 60.0), (lab_exam, 60.0)])
+    result = look(borderline)
+    check("a student who could just scrape a pass is INC, not failed",
+          result.completion.is_incomplete,
+          f"best {result.completion.best_percent}")
+
+    # ---- an activity that does not exist is nobody's fault --------------- #
+    bare = make_course("TEST-INC-BARE", teacher)
+    bare_quiz = add_item(bare, SCOPE_LECTURE, "Written Works", "Quiz 1", 100.0)
+    bare_student = make_student("INC-0009")
+    db.session.add(Enrollment(course_id=bare.id, student_id=bare_student.id))
+    db.session.commit()
+    db.session.add(Score(item_id=bare_quiz.id, student_id=bare_student.id,
+                         points=80.0))
+    db.session.commit()
+    bare_result = compute_student(bare, bare_student)
+    check("a subject with no major examination set does not put the class on INC",
+          not bare_result.completion.missing_major)
+    check("nor does one with no performance tasks set",
+          not bare_result.completion.too_many_blanks)
+    check("so an early-term subject grades normally",
+          not bare_result.completion.is_lacking)
+
+    # ---- the limit is the subject's to set -------------------------------- #
+    course.incomplete_blank_limit = 3
+    db.session.commit()
+    check("raising the limit forgives the third blank",
+          not look(three_blank).completion.too_many_blanks)
+    course.incomplete_blank_limit = 0
+    db.session.commit()
+    check("and a limit of zero forgives none",
+          look(two_blank).completion.too_many_blanks)
+    course.incomplete_blank_limit = 2
+    db.session.commit()
+
+    # ---- the headline figures must agree with the table ------------------ #
+    from app.grading import class_tally
+
+    live = class_tally(compute_class(course))
+    will_be = class_tally(compute_class(course), apply_completion=True)
+    check("the plain tally counts nobody incomplete, as it always did",
+          live["incomplete"] == 0, str(live))
+    check("but the finalise tally counts the INCs it is about to record",
+          will_be["incomplete"] == 4, str(will_be))
+    check("and moves the hopeless one into failed, not incomplete",
+          will_be["failed"] >= 1 and
+          will_be["passed"] + will_be["failed"] + will_be["removal"]
+          + will_be["incomplete"] == will_be["total"], str(will_be))
+
+    # ---- the preview must say what finalising will do --------------------- #
+    with signed_in("inc-teacher", "pw-inc-teacher") as client:
+        body = client.get(f"/gradebook/{course.id}/finalise").get_data(as_text=True)
+        check("the finalise page previews the INC",
+              "INC" in body and "no major examination taken" in body,
+              body[:120])
+
+        results = compute_class(course)
+        expected = {}
+        for row_result in results:
+            cc = row_result.completion
+            if row_result.final_percent is None:
+                expected[row_result.student.id] = INCOMPLETE_GRADE
+            elif cc is not None and cc.is_lacking:
+                expected[row_result.student.id] = (
+                    INCOMPLETE_GRADE if cc.can_still_pass else FAILING_GRADE
+                )
+
+        client.post(f"/gradebook/{course.id}/finalise",
+                    data={"confirm": "FINALISE"}, follow_redirects=True)
+
+    recorded = {row.student_id: row for row in
+                FinalGrade.query.filter_by(course_id=course.id).all()}
+
+    check("the grade recorded matches what the preview said, for everyone",
+          all(recorded[sid].grade == grade for sid, grade in expected.items()),
+          str({sid: (recorded[sid].grade, grade)
+               for sid, grade in expected.items()
+               if recorded[sid].grade != grade}))
+
+    check("the student with no major examination is recorded INC",
+          recorded[no_exam.id].grade == INCOMPLETE_GRADE
+          and recorded[no_exam.id].remark == REMARK_INCOMPLETE,
+          recorded[no_exam.id].grade)
+    check("the one with three blank tasks is recorded INC",
+          recorded[three_blank.id].grade == INCOMPLETE_GRADE)
+    check("the one who cannot pass is recorded as failed, not INC",
+          recorded[hopeless.id].grade == FAILING_GRADE
+          and recorded[hopeless.id].remark == REMARK_FAILED,
+          recorded[hopeless.id].grade)
+    check("and the student who did everything keeps their real grade",
+          recorded[complete.id].grade not in (INCOMPLETE_GRADE, FAILING_GRADE),
+          recorded[complete.id].grade)
+    check("two blanks still does not trigger it at finalisation",
+          recorded[two_blank.id].grade not in (INCOMPLETE_GRADE,),
+          recorded[two_blank.id].grade)
+
+    # The computed percentage is kept even when INC is recorded, so reopening
+    # and completing the work does not start from nothing.
+    check("the computed standing is kept alongside the INC",
+          recorded[no_exam.id].final_percent is not None,
+          str(recorded[no_exam.id].final_percent))
+
+
+def test_component_kind_backfill():
+    """A database older than the `kind` column must not read as all-written.
+
+    Adding the column gives every existing row the default, so Performance
+    Task and Major Examinations would both come back labelled Written Works
+    and the completion rules would see a class with no examinations at all.
+    """
+    from app.migrate import backfill
+
+    teacher = make_instructor("kind-teacher")
+    course = make_course("TEST-KIND", teacher)
+
+    for component in course.components:
+        component.kind = "written"          # what ADD COLUMN would leave
+    db.session.commit()
+
+    done = backfill(app)
+    check("the backfill reports what it touched", done, str(done))
+
+    kinds = {c.name: c.kind for c in course.components}
+    check("Performance Task is recovered from its name",
+          kinds.get("Performance Task") == "performance", str(kinds))
+    check("Major Examinations too",
+          kinds.get("Major Examinations") == "major", str(kinds))
+    check("and Written Works is left alone",
+          kinds.get("Written Works") == "written", str(kinds))
+
+    before = dict(kinds)
+    backfill(app)
+    check("running it again changes nothing",
+          {c.name: c.kind for c in course.components} == before)
+
+
 def test_marking_from_the_profile():
     """Every activity for one student, marked from that student's page.
 
@@ -3769,6 +4040,8 @@ def main():
         ("Screen capture measures", test_screen_capture_measures),
         ("Local-network restriction", test_network_restriction),
         ("A half-finished upgrade", test_incomplete_upgrade),
+        ("Incomplete (INC) rules", test_incomplete_rules),
+        ("Component kind backfill", test_component_kind_backfill),
         ("Marking from a student's page", test_marking_from_the_profile),
         ("The assistant pane", test_ai_pane),
         ("Carrying results back from a laptop", test_results_transfer),

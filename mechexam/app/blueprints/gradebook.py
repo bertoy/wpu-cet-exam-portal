@@ -729,14 +729,36 @@ def finalise(course_id: int):
         ).count()
     )
 
-    # Preview exactly what finalising will do, before it is done.
-    from ..grading import FAILING_GRADE, PASSING_GRADE, bump_one_step
+    # Preview exactly what finalising will do, before it is done. The order
+    # of these branches is the order in finalise_course and has to stay that
+    # way; test_rules.py finalises a class and checks every preview line
+    # against the grade that was actually recorded.
+    from ..grading import (
+        FAILING_GRADE,
+        INCOMPLETE_GRADE,
+        PASSING_GRADE,
+        bump_one_step,
+    )
 
     preview = []
     for result in results:
         after = result.grade
         note = ""
-        if result.qualifies_for_removal:
+        check = result.completion
+
+        if result.final_percent is None:
+            after, note = INCOMPLETE_GRADE, "nothing recorded at all"
+        elif check is not None and check.is_lacking:
+            best = (f"{check.best_percent:.2f}%"
+                    if check.best_percent is not None else "nothing")
+            if check.can_still_pass:
+                after = INCOMPLETE_GRADE
+                note = f"{check.summary} — finishing it could reach {best}"
+            else:
+                after = FAILING_GRADE
+                note = (f"{check.summary} — but full marks on all of it "
+                        f"reaches only {best}")
+        elif result.qualifies_for_removal:
             row = (
                 Score.query.filter_by(item_id=item.id, student_id=result.student.id).first()
                 if item is not None
@@ -760,7 +782,7 @@ def finalise(course_id: int):
         "gradebook/finalise.html",
         course=course_row,
         preview=preview,
-        tally=class_tally(results),
+        tally=class_tally(results, apply_completion=True),
         held_removal=held_removal,
         removal=item,
     )

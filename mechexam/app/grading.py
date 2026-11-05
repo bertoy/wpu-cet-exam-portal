@@ -157,6 +157,7 @@ class StudentResult:
     remark: str
     qualifies_for_removal: bool = False
     frozen: FinalGrade | None = None
+    completion: "CompletionCheck | None" = None
 
     @property
     def is_passing(self) -> bool:
@@ -289,6 +290,175 @@ def compute_component(
     return result
 
 
+@dataclass
+class CompletionCheck:
+    """Whether a student has done enough of the work to be given a grade.
+
+    An average over the work a student *did* do is flattering: a component
+    with nothing in it is rescaled out of the weighting entirely, so somebody
+    who never sat a major examination is graded on their quizzes alone and can
+    come out passing. That is the gap this closes.
+
+    The college answer to it is INC, not a fail -- but only where finishing
+    the work could still produce a pass. A student who cannot reach 60 even
+    with full marks on everything outstanding has not got an incomplete
+    grade; they have failed, and recording INC would only postpone saying so.
+    """
+
+    limit: int = 2
+    blank_performance: list = field(default_factory=list)
+    missing_major: bool = False
+    best_percent: float | None = None
+    can_still_pass: bool = False
+
+    @property
+    def too_many_blanks(self) -> bool:
+        return len(self.blank_performance) > self.limit
+
+    @property
+    def is_lacking(self) -> bool:
+        """Work is outstanding, whatever grade that ends up producing."""
+        return self.too_many_blanks or self.missing_major
+
+    @property
+    def is_incomplete(self) -> bool:
+        """INC: work outstanding, and finishing it could still pass."""
+        return self.is_lacking and self.can_still_pass
+
+    @property
+    def is_beyond_saving(self) -> bool:
+        """Work outstanding, but full marks on all of it still fails."""
+        return self.is_lacking and not self.can_still_pass
+
+    @property
+    def reasons(self) -> list[str]:
+        out = []
+        if self.too_many_blanks:
+            out.append(
+                f"{len(self.blank_performance)} performance task(s) with no "
+                f"mark, and the subject allows {self.limit}"
+            )
+        if self.missing_major:
+            out.append("no major examination taken")
+        return out
+
+    @property
+    def summary(self) -> str:
+        return "; ".join(self.reasons)
+
+
+def _combine_scopes(course: Course, lecture_percent, laboratory_percent):
+    """Lecture and laboratory into one final percentage.
+
+    Shared by the real computation and the best-case one, so the two cannot
+    drift apart and report different things about the same student.
+    """
+    if laboratory_percent is not None and lecture_percent is not None:
+        lec_share = (course.lecture_share or 67.0) / 100.0
+        lab_share = (course.laboratory_share or 33.0) / 100.0
+        divisor = lec_share + lab_share
+        if not divisor:
+            return None
+        return round(
+            (lecture_percent * lec_share + laboratory_percent * lab_share)
+            / divisor, 2
+        )
+    if lecture_percent is not None:
+        return lecture_percent
+    return laboratory_percent
+
+
+def _best_case_component(computed: "ComponentResult", method: str) -> float | None:
+    """What this component would come to with full marks on every blank."""
+    earned, possible = computed.earned, computed.possible
+    percentages: list[tuple[float, float]] = []
+
+    for entry in computed.entries:
+        multiplier = entry.item.weight_multiplier
+        if multiplier is None:
+            multiplier = 1.0
+        if entry.points is None:
+            earned += entry.max_points * multiplier
+            possible += entry.max_points * multiplier
+            percentages.append((100.0, multiplier))
+        elif entry.max_points > 0:
+            percentages.append((entry.percent or 0.0, multiplier))
+
+    if not percentages:
+        return computed.raw_percent
+
+    if method == "item_average":
+        weight_sum = sum(m for _, m in percentages)
+        return round(sum(p * m for p, m in percentages) / weight_sum, 2) \
+            if weight_sum else None
+    return round(earned / possible * 100.0, 2) if possible > 0 else None
+
+
+def assess_completion(course: Course, result: "StudentResult") -> CompletionCheck:
+    """Count what is outstanding, and work out whether finishing it could pass.
+
+    Counts performance tasks across lecture and laboratory together: the
+    subject is one requirement, and a student missing two in each half has
+    missed four.
+
+    An activity that does not exist is not a student's fault, so a subject
+    with no major examination entered yet does not put the whole class on INC.
+    Only work that exists and has no mark against it counts.
+    """
+    check = CompletionCheck(limit=course.incomplete_blank_limit
+                            if course.incomplete_blank_limit is not None else 2)
+    method = course.averaging_method or "total_points"
+
+    scopes = [result.lecture]
+    if result.laboratory is not None:
+        scopes.append(result.laboratory)
+
+    major_items = 0
+    major_marked = 0
+    best_by_scope = []
+
+    for scope in scopes:
+        best_components = []
+        for computed in scope.components:
+            kind = (computed.component.kind or "").lower()
+
+            if kind == "performance":
+                check.blank_performance += [
+                    entry.item for entry in computed.entries
+                    if entry.points is None
+                ]
+            elif kind == "major":
+                major_items += len(computed.entries)
+                major_marked += sum(1 for entry in computed.entries
+                                    if entry.points is not None)
+
+            best = _best_case_component(computed, method)
+            best_components.append(
+                (best, computed.component.weight_percent or 0.0)
+            )
+
+        weight_with_data = sum(w for best, w in best_components
+                               if best is not None)
+        if weight_with_data > 0:
+            total = sum(best * w / 100.0 for best, w in best_components
+                        if best is not None)
+            best_by_scope.append(round(total / weight_with_data * 100.0, 2))
+        else:
+            best_by_scope.append(None)
+
+    check.missing_major = major_items > 0 and major_marked == 0
+
+    lecture_best = best_by_scope[0] if best_by_scope else None
+    laboratory_best = best_by_scope[1] if len(best_by_scope) > 1 else None
+    check.best_percent = _combine_scopes(course, lecture_best, laboratory_best)
+
+    check.can_still_pass = (
+        check.best_percent is not None
+        and is_passing(transmute(check.best_percent))
+    )
+    return check
+
+
 def compute_scope(
     course: Course,
     scope: str,
@@ -333,20 +503,11 @@ def compute_student(
     if course.has_laboratory:
         laboratory = compute_scope(course, SCOPE_LABORATORY, student.id, scores, section_id)
 
-    final_percent: float | None
-    if laboratory is not None and laboratory.percent is not None and lecture.percent is not None:
-        lec_share = (course.lecture_share or 67.0) / 100.0
-        lab_share = (course.laboratory_share or 33.0) / 100.0
-        divisor = lec_share + lab_share
-        final_percent = round(
-            (lecture.percent * lec_share + laboratory.percent * lab_share) / divisor, 2
-        ) if divisor else None
-    elif lecture.percent is not None:
-        final_percent = lecture.percent
-    elif laboratory is not None and laboratory.percent is not None:
-        final_percent = laboratory.percent
-    else:
-        final_percent = None
+    final_percent = _combine_scopes(
+        course,
+        lecture.percent,
+        laboratory.percent if laboratory is not None else None,
+    )
 
     grade = transmute(final_percent)
     low = course.removal_low if course.removal_low is not None else 55.0
@@ -373,7 +534,7 @@ def compute_student(
     elif course.is_finalised:
         frozen = FinalGrade.query.filter_by(course_id=course.id, student_id=student.id).first()
 
-    return StudentResult(
+    result = StudentResult(
         student=student,
         lecture=lecture,
         laboratory=laboratory,
@@ -383,6 +544,12 @@ def compute_student(
         qualifies_for_removal=qualifies,
         frozen=frozen,
     )
+    # Worked out for every screen, but deliberately NOT folded into `grade`:
+    # during the term almost everyone is missing something, and a gradebook
+    # that reads INC all semester tells nobody anything. Finalising is what
+    # turns this into the grade of record.
+    result.completion = assess_completion(course, result)
+    return result
 
 
 def compute_class(
@@ -471,6 +638,24 @@ def finalise_course(course: Course, actor: User) -> dict:
             summary["incomplete"] += 1
             continue
 
+        # Work still outstanding. INC where finishing it could still pass --
+        # and deliberately NOT where it could not, because a student who
+        # cannot reach 60 with full marks on everything left has failed, and
+        # recording INC would only postpone telling them so for a term.
+        check = result.completion
+        if check is not None and check.is_lacking:
+            if check.can_still_pass:
+                row.grade = INCOMPLETE_GRADE
+                row.remark = REMARK_INCOMPLETE
+                summary["incomplete"] += 1
+                continue
+            row.grade = FAILING_GRADE
+            row.remark = REMARK_FAILED
+            summary["failed"] += 1
+            summary["failed_incomplete"] = \
+                summary.get("failed_incomplete", 0) + 1
+            continue
+
         if result.qualifies_for_removal:
             score_row = removal_scores.get(result.student.id)
             if score_row is not None and score_row.points is not None and item is not None:
@@ -557,12 +742,28 @@ def ensure_components(course: Course) -> None:
     db.session.commit()
 
 
-def class_tally(results: list[StudentResult]) -> dict:
-    """Pass / removal / fail counts for the foot of the printed grade sheet."""
+def class_tally(results: list[StudentResult],
+                apply_completion: bool = False) -> dict:
+    """Pass / removal / fail counts for the foot of the printed grade sheet.
+
+    ``apply_completion`` counts students the way finalising would, rather
+    than the way the live computation does. The finalise page passes it, so
+    its headline figures agree with the table underneath; without it the
+    tiles would cheerfully report nobody incomplete above a list of INCs.
+    """
     tally = {"total": len(results), "passed": 0, "removal": 0,
              "failed": 0, "incomplete": 0}
     for result in results:
         remark = result.effective_remark
+
+        if apply_completion and result.frozen is None:
+            check = result.completion
+            if result.final_percent is None:
+                remark = REMARK_INCOMPLETE
+            elif check is not None and check.is_lacking:
+                remark = (REMARK_INCOMPLETE if check.can_still_pass
+                          else REMARK_FAILED)
+
         if remark == REMARK_PASSED:
             tally["passed"] += 1
         elif remark == REMARK_REMOVAL:

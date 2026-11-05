@@ -180,6 +180,9 @@ def settings(course_id: int):
     course.removal_low = form.get("removal_low", type=float) or 55.0
     course.removal_high = form.get("removal_high", type=float) or 59.99
 
+    limit = form.get("incomplete_blank_limit", type=int)
+    course.incomplete_blank_limit = max(0, limit) if limit is not None else 2
+
     if course.removal_low >= course.removal_high:
         flash("The removal band's lower figure must be below the upper one.", "error")
         return redirect(url_for("courses.detail", course_id=course.id))
