@@ -2989,19 +2989,59 @@ def test_incomplete_rules():
     course.incomplete_blank_limit = 2
     db.session.commit()
 
+    # ---- INC shows live, before anything is finalised -------------------- #
+    live = look(no_exam)
+    check("the live grade shown is INC, not the flattering number",
+          live.effective_grade == INCOMPLETE_GRADE, live.effective_grade)
+    check("and the remark with it",
+          live.effective_remark == REMARK_INCOMPLETE, live.effective_remark)
+    check("but the computed grade underneath is kept intact",
+          live.grade not in (INCOMPLETE_GRADE, FAILING_GRADE), live.grade)
+    check("because finalising and the removal rules need the real figure",
+          live.final_percent is not None)
+
+    hopeless_live = look(hopeless)
+    check("a student who cannot pass shows the failing grade live, not INC",
+          hopeless_live.effective_grade == FAILING_GRADE,
+          hopeless_live.effective_grade)
+
+    check("a student who did everything is unaffected",
+          look(complete).effective_grade == look(complete).grade)
+    check("and so is one within the blank limit",
+          look(two_blank).effective_grade == look(two_blank).grade)
+
+    with signed_in("inc-teacher", "pw-inc-teacher") as client:
+        body = client.get(f"/gradebook/{course.id}").get_data(as_text=True)
+        check("the gradebook shows INC against the student live",
+              "INC" in body)
+        check("with the reason beside it, so they can be chased",
+              "no major examination taken" in body, body[:120])
+
+    # The student's own page, once the instructor releases grades.
+    course.grades_released = True
+    db.session.commit()
+    with signed_in("INC-0005", "INC-0005") as client:
+        body = client.get(f"/my/progress?course={course.id}").get_data(as_text=True)
+        check("the student sees INC on their own page",
+              "INC" in body, body[:120])
+        check("and is told what is outstanding, not left guessing",
+              "no major examination taken" in body)
+        check("and what finishing it could still reach",
+              "could still reach" in body)
+    course.grades_released = False
+    db.session.commit()
+
     # ---- the headline figures must agree with the table ------------------ #
     from app.grading import class_tally
 
-    live = class_tally(compute_class(course))
-    will_be = class_tally(compute_class(course), apply_completion=True)
-    check("the plain tally counts nobody incomplete, as it always did",
-          live["incomplete"] == 0, str(live))
-    check("but the finalise tally counts the INCs it is about to record",
-          will_be["incomplete"] == 4, str(will_be))
-    check("and moves the hopeless one into failed, not incomplete",
-          will_be["failed"] >= 1 and
-          will_be["passed"] + will_be["failed"] + will_be["removal"]
-          + will_be["incomplete"] == will_be["total"], str(will_be))
+    tally = class_tally(compute_class(course))
+    check("the tally counts the INCs that are showing",
+          tally["incomplete"] == 4, str(tally))
+    check("and counts the hopeless one as failed, not incomplete",
+          tally["failed"] >= 1, str(tally))
+    check("and every student lands in exactly one column",
+          tally["passed"] + tally["failed"] + tally["removal"]
+          + tally["incomplete"] == tally["total"], str(tally))
 
     # ---- the preview must say what finalising will do --------------------- #
     with signed_in("inc-teacher", "pw-inc-teacher") as client:

@@ -177,15 +177,32 @@ class StudentResult:
 
     @property
     def effective_grade(self) -> str:
-        """The grade of record: the frozen one once the subject is finalised."""
+        """The grade as it should be shown now.
+
+        Once the subject is finalised that is the frozen grade, full stop.
+        Before then it is the computed grade, except where work is still
+        outstanding: a student over the blank-task limit, or who has sat no
+        major examination, shows INC live rather than a flattering number
+        worked out from the half of the subject they did.
+
+        ``self.grade`` stays the pure transmutation underneath, because
+        finalising and the removal examination both need the real figure --
+        ``pre_removal_grade`` would otherwise be recorded as "INC".
+        """
         if self.frozen is not None and self.frozen.grade:
             return self.frozen.grade
+        if self.completion is not None and self.completion.is_lacking:
+            return (INCOMPLETE_GRADE if self.completion.can_still_pass
+                    else FAILING_GRADE)
         return self.grade
 
     @property
     def effective_remark(self) -> str:
         if self.frozen is not None and self.frozen.remark:
             return self.frozen.remark
+        if self.completion is not None and self.completion.is_lacking:
+            return (REMARK_INCOMPLETE if self.completion.can_still_pass
+                    else REMARK_FAILED)
         return self.remark
 
 
@@ -742,27 +759,16 @@ def ensure_components(course: Course) -> None:
     db.session.commit()
 
 
-def class_tally(results: list[StudentResult],
-                apply_completion: bool = False) -> dict:
+def class_tally(results: list[StudentResult]) -> dict:
     """Pass / removal / fail counts for the foot of the printed grade sheet.
 
-    ``apply_completion`` counts students the way finalising would, rather
-    than the way the live computation does. The finalise page passes it, so
-    its headline figures agree with the table underneath; without it the
-    tiles would cheerfully report nobody incomplete above a list of INCs.
+    Counts `effective_remark`, which already reports an outstanding-work INC
+    live, so these figures agree with the grade shown beside each name.
     """
     tally = {"total": len(results), "passed": 0, "removal": 0,
              "failed": 0, "incomplete": 0}
     for result in results:
         remark = result.effective_remark
-
-        if apply_completion and result.frozen is None:
-            check = result.completion
-            if result.final_percent is None:
-                remark = REMARK_INCOMPLETE
-            elif check is not None and check.is_lacking:
-                remark = (REMARK_INCOMPLETE if check.can_still_pass
-                          else REMARK_FAILED)
 
         if remark == REMARK_PASSED:
             tally["passed"] += 1

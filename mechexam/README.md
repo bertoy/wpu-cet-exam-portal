@@ -385,10 +385,16 @@ is not on the outbound allow-list; the $10 Developer plan lifts that.
     major examination entered yet does not put the whole class on INC.
   * The computed standing is kept alongside the INC, so completing the work
     after a reopen does not start from nothing.
-  * The gradebook flags **would be INC** against a student during the term,
-    so they can be chased while there is still time; the grade only changes
-    at finalisation, and the finalise page previews every case with its
-    reason and the best mark still reachable.
+  * **INC shows live**, as the grade, from the moment the condition is met —
+    in the gradebook, on the student's own page once grades are released, and
+    on the class record. The gradebook prints the reason beside it, so a
+    student can be chased about the right thing.
+  * The student is told **why** and **what finishing it could still reach**,
+    rather than being shown a bare INC.
+  * Underneath, the computed grade is kept intact, because finalising and the
+    removal examination both need the real figure — a student recorded INC
+    still has their true pre-removal grade stored. The finalise page previews
+    every case with its reason and the best mark still reachable.
 * **Marks can be entered two ways, and they obey the same rules.** The
   activity page marks one activity across the whole class, which is what you
   want after a quiz. **A student's own page marks every one of that student's

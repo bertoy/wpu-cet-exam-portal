@@ -72,6 +72,38 @@
         </div>
       </div>
 
+      {% if payload.completion and payload.completion.is_lacking
+            and not selected.is_finalised %}
+      <div class="callout {{ 'callout-warning' if payload.completion.can_still_pass
+                             else 'callout-error' }} mt2">
+        <span class="glyph" aria-hidden="true">&#9888;</span>
+        <div class="grow">
+          {% if payload.completion.can_still_pass %}
+          <p>
+            <strong>Your standing is shown as INC because work is still
+            outstanding:</strong> {{ payload.completion.summary }}.
+          </p>
+          <p class="mb0">
+            The percentage above is worked out only from what you have already
+            done. Finish the outstanding work and you could still reach
+            <strong>{{ payload.completion.best_percent|pct }}%</strong>. Speak
+            to your instructor about completing it.
+          </p>
+          {% else %}
+          <p>
+            <strong>Work is still outstanding:</strong>
+            {{ payload.completion.summary }}.
+          </p>
+          <p class="mb0">
+            Even with full marks on everything outstanding, this subject would
+            reach {{ payload.completion.best_percent|pct }}%, which is below a
+            passing mark. Speak to your instructor.
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
       {% if result.effective_remark == 'Removal' %}
       <div class="callout callout-warning mt2">
         <span class="glyph" aria-hidden="true">&#9888;</span>

@@ -782,7 +782,7 @@ def finalise(course_id: int):
         "gradebook/finalise.html",
         course=course_row,
         preview=preview,
-        tally=class_tally(results, apply_completion=True),
+        tally=class_tally(results),
         held_removal=held_removal,
         removal=item,
     )

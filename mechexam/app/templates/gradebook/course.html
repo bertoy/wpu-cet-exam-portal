@@ -198,15 +198,12 @@
                                    else ('pill-info' if result.effective_remark == 'Incomplete' else 'pill-fail')) }}">
                 {{ result.effective_remark }}
               </span>
-              {# A warning during the term, not a verdict: finalising is what
-                 decides. Shown so the student can be chased while there is
-                 still time to finish the work. #}
+              {# The grade column already reads INC; what is useful here is
+                 why, so the student can be chased about the right thing. #}
               {% if not course.is_finalised and result.completion
                     and result.completion.is_lacking %}
-                <div class="tiny {{ 'warn-text' if result.completion.can_still_pass else 'muted' }}"
-                     title="{{ result.completion.summary }}">
-                  {{ 'would be INC' if result.completion.can_still_pass
-                     else 'incomplete, cannot pass' }}
+                <div class="tiny {{ 'warn-text' if result.completion.can_still_pass else 'muted' }}">
+                  {{ result.completion.summary }}
                 </div>
               {% endif %}
             </td>

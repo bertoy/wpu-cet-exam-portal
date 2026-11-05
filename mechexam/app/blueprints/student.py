@@ -160,6 +160,7 @@ def _progress_for(course: Course) -> dict:
         "attempts": attempts,
         "pending_submissions": pending,
         "released": course.grades_released,
+        "completion": result.completion,
         "section": enrolment.section if enrolment else None,
     }
 
