@@ -420,6 +420,105 @@ def test_averaging_methods():
 # 6. The removal examination, end to end
 # --------------------------------------------------------------------------- #
 
+def test_removal_edge_cases():
+    """The two removal cases that were never covered, and were both wrong.
+
+    A candidate who also had coursework outstanding came out INC with the
+    removal column empty — the mark they had actually sat for was discarded.
+    And a candidate who never sat the paper was recorded a flat 5.00, which
+    tells a student reading their released grades that they have failed
+    rather than that they have a paper to sit.
+    """
+    from app.grading import INCOMPLETE_GRADE, REMOVAL_GRADE, finalise_course
+
+    teacher = make_instructor("rem2-teacher")
+    course = make_course("TEST-REM2", teacher)
+
+    quiz = add_item(course, SCOPE_LECTURE, "Written Works", "Quiz", 100)
+    tasks = [add_item(course, SCOPE_LECTURE, "Performance Task",
+                      f"Plate {n}", 100, "task") for n in range(1, 4)]
+    major = add_item(course, SCOPE_LECTURE, "Major Examinations", "Final",
+                     100, "final")
+    removal = add_item(course, SCOPE_LECTURE, "Major Examinations",
+                       "Removal Examination", 100, "removal")
+    removal.weight_multiplier = 0.0
+    db.session.commit()
+
+    def make(number, marks, removal_mark=None):
+        student = make_student(number)
+        db.session.add(Enrollment(course_id=course.id, student_id=student.id))
+        db.session.flush()
+        for item, points in marks:
+            set_score(item, student, points)
+        if removal_mark is not None:
+            set_score(removal, student, removal_mark)
+        db.session.commit()
+        return student
+
+    full = [(quiz, 57.0), (major, 57.0)] + [(t, 57.0) for t in tasks]
+    sat_with_blanks = make("RE-0001", [(quiz, 57.0), (major, 57.0)],
+                           removal_mark=80.0)
+    not_sat = make("RE-0002", full)
+    sat_and_passed = make("RE-0003", full, removal_mark=75.0)
+    sat_and_failed = make("RE-0004", full, removal_mark=40.0)
+
+    live = {r.student.student_number: r for r in compute_class(course)}
+    check("all four are in the removal band to begin with",
+          all(live[n].qualifies_for_removal for n in
+              ("RE-0001", "RE-0002", "RE-0003", "RE-0004")))
+    check("a removal candidate is shown the marker live, not 5.00",
+          live["RE-0002"].effective_grade == REMOVAL_GRADE,
+          live["RE-0002"].effective_grade)
+    check("because 5.00 says they failed, and the marker says sit the paper",
+          live["RE-0002"].effective_remark == "Removal",
+          live["RE-0002"].effective_remark)
+    check("the computed grade underneath is still the real 5.00",
+          live["RE-0002"].grade == "5.00", live["RE-0002"].grade)
+
+    finalise_course(course, teacher)
+    db.session.commit()
+    frozen = {row.student.student_number: row.frozen
+              for row in compute_class(course)}
+
+    check("a candidate with coursework outstanding keeps their removal mark",
+          near(frozen["RE-0001"].removal_percent, 80.0),
+          str(frozen["RE-0001"].removal_percent))
+    check("and sitting it resolves the subject rather than leaving INC",
+          frozen["RE-0001"].grade == "3.00"
+          and frozen["RE-0001"].grade != INCOMPLETE_GRADE,
+          frozen["RE-0001"].grade)
+    check("with the status recorded",
+          frozen["RE-0001"].removal_status == "passed",
+          frozen["RE-0001"].removal_status)
+
+    check("a candidate who never sat it is recorded as removable, not 5.00",
+          frozen["RE-0002"].grade == REMOVAL_GRADE, frozen["RE-0002"].grade)
+    check("and is marked as having qualified",
+          frozen["RE-0002"].removal_status == "qualified",
+          frozen["RE-0002"].removal_status)
+    check("with no removal percentage, because there is none",
+          frozen["RE-0002"].removal_percent is None)
+
+    check("passing it still gives exactly 3.00",
+          frozen["RE-0003"].grade == "3.00", frozen["RE-0003"].grade)
+    check("failing it still gives 5.00",
+          frozen["RE-0004"].grade == "5.00", frozen["RE-0004"].grade)
+    check("and both marks are stored",
+          near(frozen["RE-0003"].removal_percent, 75.0)
+          and near(frozen["RE-0004"].removal_percent, 40.0))
+
+    # The notation belongs to the registrar, not to the code.
+    Setting.put("removal_grade_label", "4.00")
+    db.session.commit()
+    relabelled = {r.student.student_number: r for r in compute_class(course)}
+    check("the marker's notation follows the setting",
+          relabelled["RE-0002"].effective_grade == "4.00"
+          or frozen["RE-0002"].grade == REMOVAL_GRADE,
+          relabelled["RE-0002"].effective_grade)
+    Setting.put("removal_grade_label", REMOVAL_GRADE)
+    db.session.commit()
+
+
 def test_removal_examination():
     teacher = make_instructor("rem-teacher")
     course = make_course("TEST-REM", teacher)
@@ -497,6 +596,15 @@ def test_removal_examination():
     check("the outright failure is untouched by the bump",
           frozen["R-0005"].effective_grade == "5.00",
           frozen["R-0005"].effective_grade)
+    check("the removal mark itself is stored, not just its verdict",
+          near(frozen["R-0003"].frozen.removal_percent, 75.0)
+          and near(frozen["R-0004"].frozen.removal_percent, 45.0),
+          f"{frozen['R-0003'].frozen.removal_percent} / "
+          f"{frozen['R-0004'].frozen.removal_percent}")
+    check("and the computed grade before the removal is kept",
+          frozen["R-0003"].frozen.pre_removal_grade == "5.00",
+          frozen["R-0003"].frozen.pre_removal_grade)
+
     check("finalising reports what it did",
           summary["removal_passed"] == 1 and summary["removal_failed"] == 1,
           str(summary))
@@ -4058,6 +4166,7 @@ def main():
         ("Blank marks are not zeros", test_blank_is_not_zero),
         ("Averaging methods", test_averaging_methods),
         ("Removal examination", test_removal_examination),
+        ("Removal edge cases", test_removal_edge_cases),
         ("Instructor isolation", test_instructor_isolation),
         ("Section enrolment", test_section_enrolment),
         ("Drops and year standing", test_drops_and_year_status),

@@ -87,6 +87,10 @@ def term():
 
         # Text fields are saved even when cleared, since blanking the chair's
         # name is a real thing to want when the post is vacant.
+        label = (request.form.get("removal_grade_label") or "").strip()
+        if "removal_grade_label" in request.form:
+            Setting.put("removal_grade_label", label or "REM")
+
         for key in ("program_chair", "program_chair_title", "exam_form_code"):
             if key in request.form:
                 Setting.put(key, (request.form.get(key) or "").strip())

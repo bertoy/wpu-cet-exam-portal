@@ -53,6 +53,7 @@ FAILING_GRADE = "5.00"
 PASSING_GRADE = "3.00"
 PASSING_PERCENT = 60.0
 INCOMPLETE_GRADE = "INC"
+REMOVAL_GRADE = "REM"          # overridden by the removal_grade_label setting
 
 PASSING_LADDER: tuple[str, ...] = (
     "1.00", "1.25", "1.50", "1.75", "2.00", "2.25", "2.50", "2.75", "3.00",
@@ -158,6 +159,7 @@ class StudentResult:
     qualifies_for_removal: bool = False
     frozen: FinalGrade | None = None
     completion: "CompletionCheck | None" = None
+    removal_label: str = REMOVAL_GRADE
 
     @property
     def is_passing(self) -> bool:
@@ -194,6 +196,11 @@ class StudentResult:
         if self.completion is not None and self.completion.is_lacking:
             return (INCOMPLETE_GRADE if self.completion.can_still_pass
                     else FAILING_GRADE)
+        # A standing in the removal band is not a 5.00 yet -- it is a 5.00
+        # the student is entitled to remove. Showing the number tells them
+        # they have failed; showing the marker tells them to sit the paper.
+        if self.qualifies_for_removal:
+            return self.removal_label
         return self.grade
 
     @property
@@ -560,6 +567,7 @@ def compute_student(
         remark=remark,
         qualifies_for_removal=qualifies,
         frozen=frozen,
+        removal_label=Setting.get("removal_grade_label", REMOVAL_GRADE),
     )
     # Worked out for every screen, but deliberately NOT folded into `grade`:
     # during the term almost everyone is missing something, and a gradebook
@@ -649,10 +657,44 @@ def finalise_course(course: Course, actor: User) -> dict:
         grade = result.grade
         remark = result.remark
 
+        # The removal mark is recorded FIRST, before any branch below can
+        # skip past it. It is something the student actually did; whatever
+        # grade the rules go on to produce, losing the mark itself is never
+        # right. (It was lost: a removal candidate who also had coursework
+        # outstanding came out INC with the removal column empty.)
+        removal_percent = None
+        score_row = removal_scores.get(result.student.id)
+        if (result.qualifies_for_removal and item is not None
+                and score_row is not None and score_row.points is not None):
+            max_points = item.max_points or 0.0
+            removal_percent = round(
+                (score_row.points / max_points * 100.0) if max_points else 0.0, 2
+            )
+            row.removal_percent = removal_percent
+
         if result.final_percent is None:
             row.grade = INCOMPLETE_GRADE
             row.remark = REMARK_INCOMPLETE
             summary["incomplete"] += 1
+            continue
+
+        # Sitting the removal examination resolves the subject, and resolves
+        # it ahead of everything else: the student was permitted to sit it,
+        # and recording INC over a paper they have already passed would be
+        # perverse. Coursework still outstanding should have stopped them
+        # sitting it in the first place.
+        if removal_percent is not None:
+            if removal_percent >= pass_mark:
+                row.grade = PASSING_GRADE          # exactly 3.00, by rule
+                row.remark = REMARK_PASSED
+                row.removal_status = "passed"
+                summary["removal_passed"] += 1
+                summary["passed"] += 1
+            else:
+                row.grade = FAILING_GRADE
+                row.remark = REMARK_FAILED
+                row.removal_status = "failed"
+                summary["removal_failed"] += 1
             continue
 
         # Work still outstanding. INC where finishing it could still pass --
@@ -674,28 +716,16 @@ def finalise_course(course: Course, actor: User) -> dict:
             continue
 
         if result.qualifies_for_removal:
-            score_row = removal_scores.get(result.student.id)
-            if score_row is not None and score_row.points is not None and item is not None:
-                max_points = item.max_points or 0.0
-                percent = (score_row.points / max_points * 100.0) if max_points else 0.0
-                row.removal_percent = round(percent, 2)
-                if percent >= pass_mark:
-                    grade = PASSING_GRADE          # exactly 3.00, by rule
-                    remark = REMARK_PASSED
-                    row.removal_status = "passed"
-                    summary["removal_passed"] += 1
-                else:
-                    grade = FAILING_GRADE
-                    remark = REMARK_FAILED
-                    row.removal_status = "failed"
-                    summary["removal_failed"] += 1
-            else:
-                # Qualified but did not sit the examination.
-                grade = FAILING_GRADE
-                remark = REMARK_REMOVAL
-                row.removal_status = "qualified"
-                summary["removal_failed"] += 1
-        elif held_removal and is_passing(grade):
+            # Qualified, did not sit it. Recorded as removable rather than
+            # as a flat 5.00, so a student reading their released grades is
+            # told to sit the paper instead of told they have failed.
+            row.grade = result.removal_label
+            row.remark = REMARK_REMOVAL
+            row.removal_status = "qualified"
+            summary["removal"] = summary.get("removal", 0) + 1
+            continue
+
+        if held_removal and is_passing(grade):
             bumped = bump_one_step(grade)
             if bumped != grade:
                 row.was_bumped = True
@@ -703,15 +733,14 @@ def finalise_course(course: Course, actor: User) -> dict:
             grade = bumped
             remark = REMARK_PASSED
 
+        # Everything touching the removal examination has already been
+        # counted and `continue`d, so what reaches here is a plain pass or a
+        # plain fail and needs no unpicking of removal_status.
         row.grade = grade
         row.remark = remark
         if is_passing(grade):
             summary["passed"] += 1
-        elif grade == FAILING_GRADE and row.removal_status not in ("failed", "qualified"):
-            summary["failed"] += 1
-        elif grade == FAILING_GRADE and row.removal_status == "failed":
-            pass  # already counted
-        elif grade == FAILING_GRADE:
+        else:
             summary["failed"] += 1
 
     course.is_finalised = True

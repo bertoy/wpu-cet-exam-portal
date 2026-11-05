@@ -370,6 +370,20 @@ is not on the outbound allow-list; the $10 Developer plan lifts that.
   67% lecture plus 33% laboratory. Laboratory can be switched on per subject
   and every weight is editable.
 * Transmutation from 95.60 = 1.00 down to 60.00 = 3.00, below that 5.00.
+* **A removal candidate is shown a marker, not 5.00.** A standing in the
+  removal band is not a failure yet — it is a 5.00 the student is entitled to
+  remove — so they are shown **REM** (with the remark *Removal*) rather than
+  a number that reads as "you have failed". The notation is a setting,
+  **Administration ▸ Term ▸ Shown for a removal candidate**: change it to
+  `4.00` or `COND` if that is what your Report of Grades uses.
+  * Sitting the removal examination **resolves the subject**, ahead of every
+    other rule: pass it and the grade is exactly 3.00, even where coursework
+    is outstanding. Outstanding work should have stopped the student sitting
+    it in the first place.
+  * The removal mark is **recorded whatever the verdict**, along with the
+    computed grade from before the removal, so nothing a student actually sat
+    for is lost.
+  * Qualified but never sat it: recorded as removable, not as 5.00.
 * **INC for work left undone, where finishing it could still pass.** A
   component with no marks in it is rescaled out of the weighting, so without
   this a student who never sat a major examination was graded on their

@@ -66,6 +66,10 @@ class Setting(db.Model):
         "laboratory_share": "33",
         "allow_student_self_password": "1",
         "grades_released_default": "0",
+        # What a student in the removal band is shown instead of 5.00, until
+        # the removal examination resolves it. "REM" by default; a registrar
+        # who writes 4.00 or COND on the Report of Grades can say so here.
+        "removal_grade_label": "REM",
         "exam_autosave_seconds": "20",
         "exam_clock_poll_seconds": "60",
         # Whether a newly created student account is asked to choose a new
